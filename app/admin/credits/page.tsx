@@ -17,13 +17,8 @@ interface CreditUser {
 }
 
 const PRESET_AMOUNTS = [50, 100, 200, 500]
-const BDT_FORMAT = new Intl.NumberFormat('en-BD', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
-
 function formatBDT(amount: number) {
-  return `৳${BDT_FORMAT.format(amount)}`
+  return `৳${amount.toFixed(2)}`
 }
 
 export default function AdminCreditsPage() {
@@ -84,7 +79,7 @@ export default function AdminCreditsPage() {
     if (!selectedUser) return
     const amount = Number(amountBdt)
     if (!Number.isFinite(amount) || amount <= 0) {
-      setError('Enter an amount greater than ৳0.')
+      setError('Enter an amount greater than ৳0.00.')
       return
     }
 
@@ -266,7 +261,7 @@ export default function AdminCreditsPage() {
                     onClick={() => setAmountBdt(String(amount))}
                     className="rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:border-teal-300/40 hover:bg-teal-300/10 hover:text-teal-100"
                   >
-                    +৳{amount}
+                    +৳{amount.toFixed(2)}
                   </button>
                 ))}
               </div>

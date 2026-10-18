@@ -62,3 +62,5 @@ http://localhost:3000
 ## Notes
 
 This project is intended as a general print-order management application and can be adapted to your own environment, hosting, and database configuration.
+
+Print rates are stored in integer poisha: A4 B&W ৳1.75, A4 Color ৳2.75, Legal B&W ৳2.00, and Legal Color ৳3.25 per page. Apply the SQL migrations in `supabase/migrations` to add the `paper_size` column used by print orders.

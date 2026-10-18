@@ -44,8 +44,6 @@ const SHORT_DATE_FORMAT = new Intl.DateTimeFormat('en-BD', {
   dateStyle: 'medium',
 })
 
-const MONEY_FORMAT = new Intl.NumberFormat('en-BD', { maximumFractionDigits: 0 })
-
 function formatDate(value: string, short = false) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Date unavailable'
@@ -78,9 +76,9 @@ async function downloadStampedCopy(order: AccountPrintOrder) {
     ['Order token', order.token],
     ['Submitted', formatDate(order.submittedAt)],
     ['File name', order.fileName],
-    ['Document specifications', `${order.pages} pages · ${order.color} · ${order.copies} copies`],
+    ['Document specifications', `${order.pages} pages · ${order.paperSize} · ${order.color} · ${order.copies} copies`],
     ['Delivery address', order.address],
-    ['Total cost', `BDT ${MONEY_FORMAT.format(order.total)}`],
+    ['Total cost', `BDT ${order.total.toFixed(2)}`],
     ['Order status', order.status],
   ] as const
   let y = 650
@@ -193,7 +191,7 @@ export default function AccountPage() {
       const { data, error } = await supabase
         .from('print_jobs')
         .select(
-          'token, created_at, total_pages, color_mode, copies, delivery_address, total_cost_poisha, status',
+          'token, created_at, total_pages, paper_size, color_mode, copies, delivery_address, total_cost_poisha, status',
         )
         .eq('user_id', account.id)
         .order('created_at', { ascending: false })
@@ -216,6 +214,7 @@ export default function AccountPage() {
             submittedAt: job.created_at,
             fileName: 'Print job document',
             pages: job.total_pages,
+            paperSize: job.paper_size,
             color: job.color_mode === 'Full Color' ? 'Full color' : 'B&W',
             copies: job.copies,
             address: job.delivery_address,

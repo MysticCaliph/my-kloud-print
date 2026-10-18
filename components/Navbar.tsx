@@ -25,11 +25,6 @@ const NAV_LINKS = [
   { label: 'My Account & Wallet', href: '/account' },
 ] as const
 
-const BALANCE_FORMAT = new Intl.NumberFormat('en-BD', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
-
 interface UserNotification {
   id: string
   title: string
@@ -344,7 +339,7 @@ export function Navbar() {
               >
                 <Wallet className="size-4 text-teal-200" aria-hidden="true" />
                 <span className="font-mono text-sm font-semibold tabular-nums text-slate-100">
-                  {account.balance === null ? '—' : `৳${BALANCE_FORMAT.format(account.balance)}`}
+                  {account.balance === null ? '—' : formatBDT(account.balance)}
                 </span>
               </div>
             )}
@@ -414,7 +409,7 @@ export function Navbar() {
               <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.09] bg-white/[0.035] px-2.5">
                 <Wallet className="size-3.5 text-teal-200" aria-hidden="true" />
                 <span className="font-mono text-xs font-semibold tabular-nums text-slate-100">
-                  {account.balance === null ? '—' : `৳${BALANCE_FORMAT.format(account.balance)}`}
+                  {account.balance === null ? '—' : formatBDT(account.balance)}
                 </span>
               </span>
             )}

@@ -3,7 +3,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import QRCode from 'qrcode'
 import { NextResponse } from 'next/server'
 import type { User } from '@supabase/supabase-js'
-import { COLOR_RATES } from '@/lib/print'
+import { calculatePrice, type PaperSize } from '@/lib/print'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
@@ -53,6 +53,7 @@ function makeTelegramCaption({
   selectedPageCount,
   pageRange,
   colorMode,
+  paperSize,
   copies,
   totalCostBdt,
   deliveryNotes,
@@ -64,6 +65,7 @@ function makeTelegramCaption({
   selectedPageCount: number
   pageRange: string
   colorMode: PrintColorMode
+  paperSize: PaperSize
   copies: number
   totalCostBdt: string
   deliveryNotes: string
@@ -73,7 +75,7 @@ function makeTelegramCaption({
     `👤 *Customer Name:* ${escapeMarkdown(customerName)}`,
     `📱 *Phone:* ${escapeMarkdown(customerPhone)}`,
     `📍 *Delivery Preference:* ${escapeMarkdown(deliveryOption)}`,
-    `📄 *Specs:* ${selectedPageCount} Pages (Range:${escapeMarkdown(pageRange)}) | ${colorMode.toUpperCase()} | x${copies}`,
+    `📄 *Specs:* ${selectedPageCount} Pages (Range:${escapeMarkdown(pageRange)}) | ${paperSize} ${colorMode.toUpperCase()} | x${copies}`,
     `💵 *Paid Total:* ৳${escapeMarkdown(totalCostBdt)}`,
     `📝 *Notes:* ${escapeMarkdown(deliveryNotes || 'None')}`,
   ].join('\n')
@@ -86,6 +88,7 @@ async function createStampPdf({
   selectedPageCount,
   pageRange,
   colorMode,
+  paperSize,
   copies,
   deliveryOption,
   totalCostBdt,
@@ -96,6 +99,7 @@ async function createStampPdf({
   selectedPageCount: number
   pageRange: string
   colorMode: PrintColorMode
+  paperSize: PaperSize
   copies: number
   deliveryOption: string
   totalCostBdt: number
@@ -152,7 +156,7 @@ async function createStampPdf({
     maxWidth: 132,
   })
   page.drawText(
-    `Specs: ${selectedPageCount}pg (${printable(pageRange, 24)}) ${colorMode.toUpperCase()} x${copies}`,
+    `Specs: ${selectedPageCount}pg (${printable(pageRange, 24)}) ${paperSize} ${colorMode.toUpperCase()} x${copies}`,
     {
       x: 8,
       y: 138,
@@ -319,6 +323,7 @@ export async function POST(request: Request) {
   const deliveryNotesValue = form.get('deliveryNotes')
   const pageRangeValue = form.get('pageRange') ?? form.get('selectedPageRange')
   const colorValue = form.get('colorMode')
+  const paperSizeValue = form.get('paperSize')
   const selectedPagesValue = form.get('selectedPages')
 
   if (!(fileValue instanceof File)) {
@@ -372,6 +377,9 @@ export async function POST(request: Request) {
   if (colorValue !== 'bw' && colorValue !== 'color') {
     return jsonError('Color mode must be "bw" or "color".', 400)
   }
+  if (paperSizeValue !== 'A4' && paperSizeValue !== 'Legal') {
+    return jsonError('Paper size must be "A4" or "Legal".', 400)
+  }
 
   const totalPages = parsePositiveInteger(form.get('totalPages'))
   let selectedPages: number[] | null = null
@@ -402,10 +410,15 @@ export async function POST(request: Request) {
   if (!submittedTotalCostPoisha) {
     return jsonError('Total cost must be a positive amount in poisha.', 400)
   }
-  const grandTotalBdt = selectedPages.length * copies * COLOR_RATES[colorValue]
-  const totalCostPoisha = Math.round(grandTotalBdt * 100)
+  const price = calculatePrice(selectedPages.length, {
+    color: colorValue,
+    paperSize: paperSizeValue,
+    side: 'single',
+    copies,
+  })
+  const totalCostPoisha = price.grandTotalPoisha
   if (submittedTotalCostPoisha !== totalCostPoisha) {
-    return jsonError('Submitted total cost does not match the page count, color mode, and copies.', 400)
+    return jsonError('Submitted total cost does not match the page count, paper size, color mode, and copies.', 400)
   }
 
   let originalPdfBuffer: Uint8Array
@@ -457,10 +470,7 @@ export async function POST(request: Request) {
   const token = makeOrderToken()
   const tokenCode = token.replace(/^#/, '')
   const colorLabel = colorValue === 'color' ? 'Full Color' : 'Black & White'
-  const totalCostBdt = new Intl.NumberFormat('en-BD', {
-    maximumFractionDigits: 2,
-    minimumFractionDigits: totalCostPoisha % 100 === 0 ? 0 : 2,
-  }).format(totalCostPoisha / 100)
+  const totalCostBdt = (totalCostPoisha / 100).toFixed(2)
   const caption = makeTelegramCaption({
     tokenCode,
     customerName: finalCustomerName,
@@ -469,6 +479,7 @@ export async function POST(request: Request) {
     selectedPageCount: selectedPages.length,
     pageRange: finalPageRange,
     colorMode: colorValue,
+    paperSize: paperSizeValue,
     copies,
     totalCostBdt,
     deliveryNotes,
@@ -482,6 +493,7 @@ export async function POST(request: Request) {
       selectedPageCount: selectedPages.length,
       pageRange: finalPageRange,
       colorMode: colorValue,
+      paperSize: paperSizeValue,
       copies,
       deliveryOption: finalDeliveryOption,
       totalCostBdt: totalCostPoisha / 100,
@@ -497,6 +509,7 @@ export async function POST(request: Request) {
         delivery_option: finalDeliveryOption,
         total_pages: selectedPages.length,
         color_mode: colorLabel,
+        paper_size: paperSizeValue,
         copies,
         total_cost_poisha: totalCostPoisha,
         telegram_file_id: null,

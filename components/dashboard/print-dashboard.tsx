@@ -81,7 +81,8 @@ export function PrintDashboard() {
         )
         formData.append('colorMode', options.color)
         formData.append('copies', String(options.copies))
-        formData.append('totalCostPoisha', String(Math.round(price.grandTotal * 100)))
+        formData.append('paperSize', options.paperSize)
+        formData.append('totalCostPoisha', String(price.grandTotalPoisha))
         formData.append('customerPhone', account.phone)
         formData.append('deliveryOption', deliveryOption)
 

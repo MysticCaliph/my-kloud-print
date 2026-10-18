@@ -22,6 +22,7 @@ import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 
 type OrderStatus = 'PENDING' | 'PRINTED' | 'DISPATCHED' | 'DELIVERED' | 'CANCELLED'
 type PrintColor = 'B&W' | 'Full color'
+type PaperSize = 'A4' | 'Legal'
 
 interface PrintOrder {
   id: string
@@ -29,6 +30,7 @@ interface PrintOrder {
   phone: string
   deliveryOption: string | null
   pages: number
+  paperSize: PaperSize
   color: PrintColor
   copies: number
   total: number
@@ -49,10 +51,6 @@ const STATUS_STYLE: Record<OrderStatus, string> = {
   CANCELLED: 'border-rose-400/20 bg-rose-400/10 text-rose-300',
 }
 
-const CURRENCY = new Intl.NumberFormat('en-BD', {
-  maximumFractionDigits: 0,
-})
-
 const DATE_TIME = new Intl.DateTimeFormat('en-BD', {
   dateStyle: 'medium',
   timeStyle: 'short',
@@ -64,7 +62,7 @@ const DATE_LABEL = new Intl.DateTimeFormat('en-US', {
 })
 
 function formatBDT(amount: number) {
-  return `৳${CURRENCY.format(amount)}`
+  return `৳${amount.toFixed(2)}`
 }
 
 function normalizeStatus(value: string): OrderStatus {
@@ -179,6 +177,7 @@ export default function AdminPage() {
             phone: job.customer_phone,
             deliveryOption: job.delivery_option,
             pages: job.total_pages,
+            paperSize: job.paper_size,
             color: job.color_mode === 'Full Color' || job.color_mode === 'color'
               ? 'Full color'
               : 'B&W',
@@ -497,7 +496,7 @@ export default function AdminPage() {
                         </div>
                         <div className="mt-1.5 text-xs text-slate-500">
                           <span className={order.color === 'Full color' ? 'text-fuchsia-300' : 'text-slate-400'}>
-                            {order.color}
+                            {order.paperSize} · {order.color}
                           </span>
                           <span className="mx-1.5 text-slate-700">·</span>
                           {order.copies} {order.copies === 1 ? 'copy' : 'copies'}

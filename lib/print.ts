@@ -9,20 +9,15 @@ export interface PrintOptions {
   copies: number
 }
 
-export const COLOR_RATES: Record<PrintColor, number> = {
-  bw: 1.5,
-  color: 2.5,
+export const PRINT_RATES_POISHA: Record<PaperSize, Record<PrintColor, number>> = {
+  A4: { bw: 175, color: 275 },
+  Legal: { bw: 200, color: 325 },
 }
 
 export const MAX_COPIES = 99
 
-const bdtFormatter = new Intl.NumberFormat('en-IN', {
-  maximumFractionDigits: 2,
-  minimumFractionDigits: 0,
-})
-
 export function formatBDT(amount: number) {
-  return `৳${bdtFormatter.format(amount)}`
+  return `৳${amount.toFixed(2)}`
 }
 
 export function formatFileSize(bytes: number) {
@@ -79,15 +74,18 @@ export function pagesToRange(pages: number[]) {
 }
 
 export function calculatePrice(selectedPages: number, options: PrintOptions) {
-  const rate = COLOR_RATES[options.color]
-  const printCost = selectedPages * rate * options.copies
+  const ratePoisha = PRINT_RATES_POISHA[options.paperSize][options.color]
+  const printCostPoisha = selectedPages * options.copies * ratePoisha
   const sheetsPerCopy =
     options.side === 'duplex' ? Math.ceil(selectedPages / 2) : selectedPages
 
   return {
-    rate,
-    printCost,
-    grandTotal: printCost,
+    ratePoisha,
+    rate: ratePoisha / 100,
+    printCostPoisha,
+    printCost: printCostPoisha / 100,
+    grandTotalPoisha: printCostPoisha,
+    grandTotal: printCostPoisha / 100,
     sheets: sheetsPerCopy * options.copies,
   }
 }

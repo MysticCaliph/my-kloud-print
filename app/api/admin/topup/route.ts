@@ -98,6 +98,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     success: true,
-    message: `Successfully added ৳${amountBdt} credit`,
+    message: `Successfully added ৳${(amountPoisha / 100).toFixed(2)} credit`,
   })
 }

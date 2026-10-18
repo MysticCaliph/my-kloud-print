@@ -59,7 +59,7 @@ export async function GET(request: Request) {
 
   const { data: job, error: jobError } = await supabaseAdmin
     .from('print_jobs')
-    .select('token, customer_name, customer_phone, delivery_option, total_pages, color_mode, copies, total_cost_poisha')
+    .select('token, customer_name, customer_phone, delivery_option, total_pages, paper_size, color_mode, copies, total_cost_poisha')
     .eq('id', id)
     .maybeSingle()
   if (jobError) {
@@ -119,7 +119,7 @@ export async function GET(request: Request) {
       maxWidth: 132,
     })
     page.drawText(
-      `Specs: ${job.total_pages} pgs | ${job.color_mode} | x${job.copies}`,
+      `Specs: ${job.total_pages} pgs | ${job.paper_size} ${job.color_mode} | x${job.copies}`,
       {
         x: 8,
         y: 133,

@@ -15,6 +15,7 @@ export interface AccountPrintOrder {
   submittedAt: string
   fileName: string
   pages: number
+  paperSize: 'A4' | 'Legal'
   color: 'B&W' | 'Full color'
   copies: number
   address: string
