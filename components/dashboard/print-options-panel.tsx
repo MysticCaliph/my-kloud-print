@@ -4,8 +4,6 @@ import type { ReactNode } from 'react'
 import { Check, Copy, Minus, Palette, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-  formatBDT,
-  PRINT_RATES_POISHA,
   MAX_COPIES,
   type PaperSize,
   type PrintColor,
@@ -156,13 +154,13 @@ export function PrintOptionsPanel({ options, onChange }: PrintOptionsPanelProps)
             {
               value: 'bw',
               label: 'Black & White',
-              description: `${options.paperSize} B&W: ${formatBDT(PRINT_RATES_POISHA[options.paperSize].bw / 100)} / page`,
+              description: '৳1.75 – ৳2.00 / page',
               visual: <ColorSwatch color="bw" />,
             },
             {
               value: 'color',
               label: 'Full Color',
-              description: `${options.paperSize} Color: ${formatBDT(PRINT_RATES_POISHA[options.paperSize].color / 100)} / page`,
+              description: '৳2.75 – ৳3.25 / page',
               visual: <ColorSwatch color="color" />,
             },
           ]}
@@ -177,13 +175,13 @@ export function PrintOptionsPanel({ options, onChange }: PrintOptionsPanelProps)
             {
               value: 'A4',
               label: 'A4',
-              description: `A4 B&W: ${formatBDT(PRINT_RATES_POISHA.A4.bw / 100)} / page · A4 Color: ${formatBDT(PRINT_RATES_POISHA.A4.color / 100)} / page · 210 × 297 mm`,
+              description: '210 × 297 mm',
               visual: <PaperIcon size="A4" />,
             },
             {
               value: 'Legal',
               label: 'Legal',
-              description: `Legal B&W: ${formatBDT(PRINT_RATES_POISHA.Legal.bw / 100)} / page · Legal Color: ${formatBDT(PRINT_RATES_POISHA.Legal.color / 100)} / page · 216 × 356 mm`,
+              description: '216 × 356 mm',
               visual: <PaperIcon size="Legal" />,
             },
           ]}
