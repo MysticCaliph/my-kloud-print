@@ -196,10 +196,9 @@ export function ManualOrderModal({
       resetForm()
       onOpenChange(false)
       onCreated()
-    } catch (error) {
-      setSubmitError(
-        error instanceof Error ? error.message : 'Could not create the manual print job.',
-      )
+    } catch (err) {
+      console.log(err)
+      setSubmitError(err instanceof Error ? err.message || String(err) : String(err))
     } finally {
       setIsSubmitting(false)
     }
