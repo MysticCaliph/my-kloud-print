@@ -173,6 +173,14 @@ export function ManualOrderModal({
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selectedUser || !pageCountValid || !copyCountValid || !totalCostValid) return
+    if (
+      deductFromWallet &&
+      walletBalancePoisha !== null &&
+      walletBalancePoisha < totalCostPoisha
+    ) {
+      setSubmitError('Insufficient wallet balance.')
+      return
+    }
     if (!deliveryOption) {
       setSubmitError('Select a delivery option.')
       return

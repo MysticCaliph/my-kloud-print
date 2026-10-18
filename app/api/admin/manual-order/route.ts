@@ -188,21 +188,50 @@ export async function POST(request: Request) {
   if (!customer) return jsonError('The selected customer account was not found.', 404)
 
   if (deductFromWallet) {
+    const { data: wallet, error: walletError } = await supabaseAdmin
+      .from('wallets')
+      .select('balance_poisha')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (walletError) {
+      console.error('Manual print order wallet balance lookup failed:', walletError)
+      return jsonError('Could not verify the user wallet balance.', 503)
+    }
+
+    const userBalanceInPoisha =
+      wallet?.balance_poisha == null ? 0 : Number(wallet.balance_poisha)
+    if (!Number.isSafeInteger(userBalanceInPoisha)) {
+      console.error(
+        'Manual print order wallet balance is not a safe integer:',
+        wallet?.balance_poisha,
+      )
+      return jsonError('Could not verify the user wallet balance.', 503)
+    }
+    if (userBalanceInPoisha < totalCostPoisha) {
+      return jsonError('Insufficient wallet balance.', 402)
+    }
+
     try {
       const { data, error } = await supabaseAdmin.rpc('atomic_deduct_print_cost', {
         p_user_id: userId,
         p_amount_poisha: totalCostPoisha,
       })
-      if (error) {
-        console.error('Manual print order wallet deduction failed:', error)
-        return jsonError(error.message || 'Could not deduct from the user wallet.', 402)
-      }
+      if (error) throw error
       if (!isConfirmedRpcSuccess(data)) {
-        return jsonError('Insufficient wallet balance or wallet deduction was not confirmed.', 402)
+        return jsonError('Wallet deduction was not confirmed.', 500)
       }
     } catch (error) {
-      console.error('Manual print order wallet deduction failed:', error)
-      return jsonError('Could not deduct from the user wallet.', 500)
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'object' &&
+              error !== null &&
+              'message' in error &&
+              typeof error.message === 'string'
+            ? error.message
+            : String(error)
+      console.error(`Manual print order wallet deduction failed: ${message}`, error)
+      return jsonError(message, 500)
     }
   }
 
