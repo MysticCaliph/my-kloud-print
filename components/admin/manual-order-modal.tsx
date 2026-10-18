@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Plus } from 'lucide-react'
+import { Check, ChevronDown, Loader2, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createAdminManualOrder } from '@/lib/admin-orders'
 import {
@@ -59,6 +59,8 @@ export function ManualOrderModal({
   const [userLoadError, setUserLoadError] = useState<string | null>(null)
   const [userSearch, setUserSearch] = useState('')
   const [selectedUserId, setSelectedUserId] = useState('')
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false)
+  const [activeCustomerIndex, setActiveCustomerIndex] = useState(0)
   const [paperSize, setPaperSize] = useState<ManualPaperSize>('A4')
   const [colorMode, setColorMode] = useState<PrintColor>('bw')
   const [totalPages, setTotalPages] = useState('1')
@@ -97,18 +99,14 @@ export function ManualOrderModal({
 
   const filteredUsers = useMemo(() => {
     const term = userSearch.trim().toLowerCase()
-    const matches = term
+    return term
       ? users.filter((user) =>
           [user.name, user.email, user.phone].some((value) =>
             value.toLowerCase().includes(term),
           ),
         )
       : users
-    const selected = users.find((user) => user.id === selectedUserId)
-    return selected && !matches.some((user) => user.id === selected.id)
-      ? [selected, ...matches]
-      : matches
-  }, [selectedUserId, userSearch, users])
+  }, [userSearch, users])
 
   const selectedUser = users.find((user) => user.id === selectedUserId)
   const pageCount = Number(totalPages)
@@ -125,6 +123,8 @@ export function ManualOrderModal({
   function resetForm() {
     setUserSearch('')
     setSelectedUserId('')
+    setIsCustomerDropdownOpen(false)
+    setActiveCustomerIndex(0)
     setPaperSize('A4')
     setColorMode('bw')
     setTotalPages('1')
@@ -133,6 +133,41 @@ export function ManualOrderModal({
     setJobTitle('')
     setDeductFromWallet(false)
     setSubmitError(null)
+  }
+
+  function selectCustomer(user: ManualOrderUser) {
+    setSelectedUserId(user.id)
+    setUserSearch('')
+    setIsCustomerDropdownOpen(false)
+    setActiveCustomerIndex(0)
+    setSubmitError(null)
+  }
+
+  function handleCustomerKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      if (!isCustomerDropdownOpen) {
+        setUserSearch('')
+        setIsCustomerDropdownOpen(true)
+        setActiveCustomerIndex(0)
+        return
+      }
+      if (filteredUsers.length > 0) {
+        setActiveCustomerIndex((current) =>
+          event.key === 'ArrowDown'
+            ? (current + 1) % filteredUsers.length
+            : (current - 1 + filteredUsers.length) % filteredUsers.length,
+        )
+      }
+    } else if (event.key === 'Enter' && isCustomerDropdownOpen) {
+      if (filteredUsers[activeCustomerIndex]) {
+        event.preventDefault()
+        selectCustomer(filteredUsers[activeCustomerIndex])
+      }
+    } else if (event.key === 'Escape') {
+      setIsCustomerDropdownOpen(false)
+      setUserSearch('')
+    }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -198,32 +233,109 @@ export function ManualOrderModal({
             </p>
           )}
 
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">Find customer</span>
-            <input
-              type="search"
-              value={userSearch}
-              onChange={(event) => setUserSearch(event.target.value)}
-              placeholder="Search name, email, or phone"
-              className="h-10 rounded-lg border border-white/[0.12] bg-[#0b111b] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-teal-300/50"
-            />
-            <select
-              required
-              value={selectedUserId}
-              onChange={(event) => setSelectedUserId(event.target.value)}
-              disabled={isLoadingUsers || Boolean(userLoadError)}
-              className="h-10 rounded-lg border border-white/[0.12] bg-[#0b111b] px-3 text-sm text-slate-100 outline-none focus:border-teal-300/50 disabled:opacity-50"
-            >
-              <option value="">
-                {isLoadingUsers ? 'Loading customers…' : 'Select a customer'}
-              </option>
-              {filteredUsers.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name} · {user.phone || user.email || user.id}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="flex flex-col gap-1.5 text-sm">
+            <label htmlFor="manual-order-customer" className="font-medium">
+              Find customer
+            </label>
+            <div className="relative">
+              <input
+                id="manual-order-customer"
+                type="text"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={isCustomerDropdownOpen}
+                aria-controls="manual-order-customer-listbox"
+                aria-activedescendant={
+                  isCustomerDropdownOpen && filteredUsers[activeCustomerIndex]
+                    ? `manual-order-customer-${filteredUsers[activeCustomerIndex].id}`
+                    : undefined
+                }
+                aria-required="true"
+                autoComplete="off"
+                value={
+                  isCustomerDropdownOpen
+                    ? userSearch
+                    : selectedUser
+                      ? `${selectedUser.name} · ${selectedUser.phone || selectedUser.email || selectedUser.id}`
+                      : userSearch
+                }
+                onFocus={() => {
+                  if (!isCustomerDropdownOpen) {
+                    setUserSearch('')
+                    setActiveCustomerIndex(0)
+                    setIsCustomerDropdownOpen(true)
+                  }
+                }}
+                onBlur={() => {
+                  setIsCustomerDropdownOpen(false)
+                  setUserSearch('')
+                }}
+                onChange={(event) => {
+                  setUserSearch(event.target.value)
+                  setSelectedUserId('')
+                  setActiveCustomerIndex(0)
+                  setIsCustomerDropdownOpen(true)
+                }}
+                onKeyDown={handleCustomerKeyDown}
+                placeholder={
+                  isLoadingUsers
+                    ? 'Loading customers…'
+                    : 'Search name, phone, or email'
+                }
+                disabled={isLoadingUsers || Boolean(userLoadError)}
+                className="h-10 w-full rounded-lg border border-white/[0.12] bg-[#0b111b] px-3 pr-10 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-teal-300/50 disabled:opacity-50"
+              />
+              <ChevronDown
+                className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-500"
+                aria-hidden="true"
+              />
+              {isCustomerDropdownOpen && (
+                <ul
+                  id="manual-order-customer-listbox"
+                  role="listbox"
+                  aria-label="Customers"
+                  className="absolute z-30 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-white/[0.12] bg-[#101722] p-1 shadow-xl"
+                >
+                  {filteredUsers.length > 0 ? (
+                    filteredUsers.map((user, index) => {
+                      const isSelected = user.id === selectedUserId
+                      const isActive = index === activeCustomerIndex
+                      return (
+                        <li
+                          id={`manual-order-customer-${user.id}`}
+                          key={user.id}
+                          role="option"
+                          aria-selected={isSelected}
+                          onPointerDown={(event) => event.preventDefault()}
+                          onMouseEnter={() => setActiveCustomerIndex(index)}
+                          onClick={() => selectCustomer(user)}
+                          className={`flex cursor-pointer items-center justify-between gap-3 rounded-md px-3 py-2 ${
+                            isActive
+                              ? 'bg-teal-300/10 text-teal-100'
+                              : 'text-slate-200 hover:bg-white/[0.05]'
+                          }`}
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">{user.name}</span>
+                            <span className="block truncate text-xs text-slate-500">
+                              {user.phone || user.email || user.id}
+                            </span>
+                          </span>
+                          {isSelected && (
+                            <Check className="size-4 shrink-0 text-teal-300" aria-hidden="true" />
+                          )}
+                        </li>
+                      )
+                    })
+                  ) : (
+                    <li role="status" className="px-3 py-2 text-xs text-slate-500">
+                      No customers match your search.
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
+          </div>
 
           {selectedUser && (
             <div className="rounded-lg border border-white/[0.08] bg-[#0b111b] px-3 py-2 text-xs text-slate-400">
