@@ -13,17 +13,31 @@ const bengali = Hind_Siliguri({
 })
 
 export const metadata: Metadata = {
-  title: 'PrintKloud — Cloud Printing near KUET',
-  description:
-    'PrintKloud: upload PDFs, pick print options, see instant BDT pricing, and get prints delivered around KUET, Khulna. Pay with your bKash-funded wallet.',
+  metadataBase: new URL('https://www.printkloud.me'),
+  title: 'PrintKloud | Cloud Printing Service',
+  description: 'Fast, secure cloud printing and local hand-to-hand delivery.',
   generator: 'v0.app',
-  icons: {
-    icon: [
-      { url: '/icon-light-32x32.png', media: '(prefers-color-scheme: light)' },
-      { url: '/icon-dark-32x32.png', media: '(prefers-color-scheme: dark)' },
-      { url: '/icon.svg', type: 'image/svg+xml' },
+  icons: { icon: '/icon.jpg' },
+  openGraph: {
+    title: 'PrintKloud | Cloud Printing Service',
+    description: 'Fast, secure cloud printing and local hand-to-hand delivery.',
+    url: 'https://www.printkloud.me',
+    siteName: 'PrintKloud',
+    images: [
+      {
+        url: '/opengraph-image.jpg',
+        width: 1200,
+        height: 1200,
+        alt: 'PrintKloud Logo',
+      },
     ],
-    apple: '/apple-icon.png',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'PrintKloud | Cloud Printing Service',
+    description: 'Fast, secure cloud printing and local hand-to-hand delivery.',
+    images: ['/opengraph-image.jpg'],
   },
 }
 
