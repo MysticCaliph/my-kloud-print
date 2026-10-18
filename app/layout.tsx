@@ -13,32 +13,9 @@ const bengali = Hind_Siliguri({
 })
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://www.printkloud.me'),
   title: 'PrintKloud | Cloud Printing Service',
   description: 'Fast, secure cloud printing and local hand-to-hand delivery.',
-  generator: 'v0.app',
-  icons: { icon: '/icon.jpg' },
-  openGraph: {
-    title: 'PrintKloud | Cloud Printing Service',
-    description: 'Fast, secure cloud printing and local hand-to-hand delivery.',
-    url: 'https://www.printkloud.me',
-    siteName: 'PrintKloud',
-    images: [
-      {
-        url: '/opengraph-image.jpg',
-        width: 1200,
-        height: 1200,
-        alt: 'PrintKloud Logo',
-      },
-    ],
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'PrintKloud | Cloud Printing Service',
-    description: 'Fast, secure cloud printing and local hand-to-hand delivery.',
-    images: ['/opengraph-image.jpg'],
-  },
+  metadataBase: new URL('https://www.printkloud.me'),
 }
 
 export const viewport: Viewport = {
