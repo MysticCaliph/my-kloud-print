@@ -13,11 +13,13 @@ import {
   FileText,
   PackageCheck,
   Phone,
+  Plus,
   Printer,
   Search,
   Truck,
 } from 'lucide-react'
 import { Navbar } from '@/components/Navbar'
+import { ManualOrderModal } from '@/components/admin/manual-order-modal'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 
 type OrderStatus = 'PENDING' | 'PRINTED' | 'DISPATCHED' | 'DELIVERED' | 'CANCELLED'
@@ -152,6 +154,8 @@ export default function AdminPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<StatusFilter>('ALL')
+  const [isManualOrderOpen, setIsManualOrderOpen] = useState(false)
+  const [manualOrderNotice, setManualOrderNotice] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null)
 
@@ -177,7 +181,7 @@ export default function AdminPage() {
             phone: job.customer_phone,
             deliveryOption: job.delivery_option,
             pages: job.total_pages,
-            paperSize: job.paper_size,
+            paperSize: job.paper_size === 'LEGAL' ? 'Legal' : job.paper_size,
             color: job.color_mode === 'Full Color' || job.color_mode === 'color'
               ? 'Full color'
               : 'B&W',
@@ -295,6 +299,17 @@ export default function AdminPage() {
             >
               Manage User Credits
             </Link>
+            <button
+              type="button"
+              onClick={() => {
+                setManualOrderNotice(null)
+                setIsManualOrderOpen(true)
+              }}
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-sky-300/20 bg-sky-300/10 px-3.5 text-sm font-medium text-sky-100 transition-colors hover:bg-sky-300/15"
+            >
+              <Plus className="size-4" aria-hidden="true" />
+              Manual print job
+            </button>
           </div>
           <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
             <div className="flex items-center gap-3 rounded-xl border border-white/[0.08] bg-[#101722] px-3.5 py-2.5">
@@ -405,6 +420,11 @@ export default function AdminPage() {
           {(loadError || actionError) && (
             <p role="alert" className="border-b border-rose-400/20 bg-rose-400/[0.06] px-5 py-3 text-sm text-rose-300">
               {actionError ?? loadError}
+            </p>
+          )}
+          {manualOrderNotice && (
+            <p role="status" className="border-b border-emerald-400/20 bg-emerald-400/[0.06] px-5 py-3 text-sm text-emerald-300">
+              {manualOrderNotice}
             </p>
           )}
 
@@ -614,6 +634,14 @@ export default function AdminPage() {
           </footer>
         </section>
       </div>
+      <ManualOrderModal
+        open={isManualOrderOpen}
+        onOpenChange={setIsManualOrderOpen}
+        onCreated={() => {
+          setManualOrderNotice('Manual print job created.')
+          void fetchPrintJobs()
+        }}
+      />
     </main>
   )
 }

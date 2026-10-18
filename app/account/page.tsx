@@ -191,7 +191,7 @@ export default function AccountPage() {
       const { data, error } = await supabase
         .from('print_jobs')
         .select(
-          'token, created_at, total_pages, paper_size, color_mode, copies, delivery_address, total_cost_poisha, status',
+          'token, created_at, total_pages, original_filename, paper_size, color_mode, copies, delivery_address, total_cost_poisha, status',
         )
         .eq('user_id', account.id)
         .order('created_at', { ascending: false })
@@ -212,10 +212,13 @@ export default function AccountPage() {
           data.map((job) => ({
             token: job.token,
             submittedAt: job.created_at,
-            fileName: 'Print job document',
+            fileName: job.original_filename || 'Print job document',
             pages: job.total_pages,
-            paperSize: job.paper_size,
-            color: job.color_mode === 'Full Color' ? 'Full color' : 'B&W',
+            paperSize: job.paper_size === 'LEGAL' ? 'Legal' : job.paper_size,
+            color:
+              job.color_mode === 'Full Color' || job.color_mode === 'color'
+                ? 'Full color'
+                : 'B&W',
             copies: job.copies,
             address: job.delivery_address,
             total: job.total_cost_poisha / 100,
@@ -439,7 +442,7 @@ export default function AccountPage() {
                                 <span className="truncate">{order.fileName}</span>
                               </div>
                               <div className="mt-3 grid gap-x-6 gap-y-2 text-xs text-slate-400 sm:grid-cols-2 xl:grid-cols-3">
-                                <p>{order.pages} pages · {order.color} · {order.copies} {order.copies === 1 ? 'copy' : 'copies'}</p>
+                                <p>{order.pages} pages · {order.paperSize} · {order.color} · {order.copies} {order.copies === 1 ? 'copy' : 'copies'}</p>
                                 <p className="flex items-start gap-1.5">
                                   <MapPin className="mt-0.5 size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
                                   {order.address}
