@@ -49,10 +49,12 @@ export function ManualOrderModal({
   open,
   onOpenChange,
   onCreated,
+  initialUserId,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreated: () => void
+  initialUserId?: string | null
 }) {
   const [users, setUsers] = useState<ManualOrderUser[]>([])
   const [isLoadingUsers, setIsLoadingUsers] = useState(false)
@@ -84,7 +86,13 @@ export function ManualOrderModal({
           error?: string
         }
         if (!response.ok) throw new Error(result.error ?? 'Could not load customers.')
-        setUsers(result.users ?? [])
+        const loadedUsers = result.users ?? []
+        setUsers(loadedUsers)
+        setSelectedUserId(
+          initialUserId && loadedUsers.some((user) => user.id === initialUserId)
+            ? initialUserId
+            : '',
+        )
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return
@@ -95,7 +103,7 @@ export function ManualOrderModal({
       })
 
     return () => controller.abort()
-  }, [open])
+  }, [initialUserId, open])
 
   const filteredUsers = useMemo(() => {
     const term = userSearch.trim().toLowerCase()

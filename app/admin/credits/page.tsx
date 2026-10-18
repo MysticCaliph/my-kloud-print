@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle2, Search, Wallet } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Plus, Search, Wallet } from 'lucide-react'
 import { Navbar } from '@/components/Navbar'
+import { ManualOrderModal } from '@/components/admin/manual-order-modal'
 
 interface CreditUser {
   id: string
@@ -25,6 +26,8 @@ export default function AdminCreditsPage() {
   const [query, setQuery] = useState('')
   const [users, setUsers] = useState<CreditUser[]>([])
   const [selectedUser, setSelectedUser] = useState<CreditUser | null>(null)
+  const [isManualOrderOpen, setIsManualOrderOpen] = useState(false)
+  const [manualOrderUserId, setManualOrderUserId] = useState<string | null>(null)
   const [amountBdt, setAmountBdt] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -39,6 +42,15 @@ export default function AdminCreditsPage() {
     setUsers(loadedUsers)
     return loadedUsers
   }, [])
+
+  const refreshUsers = useCallback(async () => {
+    const refreshedUsers = await fetchUsers()
+    setSelectedUser((current) =>
+      current
+        ? refreshedUsers.find((user) => user.id === current.id) ?? current
+        : current,
+    )
+  }, [fetchUsers])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -146,9 +158,22 @@ export default function AdminCreditsPage() {
         )}
 
         <section className="rounded-2xl border border-white/[0.08] bg-[#101722] p-5 sm:p-7">
-          <label htmlFor="user-search" className="text-sm font-medium text-slate-200">
-            Search users
-          </label>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label htmlFor="user-search" className="text-sm font-medium text-slate-200">
+              Search users
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setManualOrderUserId(null)
+                setIsManualOrderOpen(true)
+              }}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-sky-300/20 bg-sky-300/10 px-3 text-xs font-medium text-sky-100 transition-colors hover:bg-sky-300/15"
+            >
+              <Plus className="size-3.5" aria-hidden="true" />
+              Create Manual Print Job
+            </button>
+          </div>
           <div className="relative mt-2">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
             <input
@@ -201,17 +226,30 @@ export default function AdminCreditsPage() {
                           ৳{balanceBdt}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedUser(user)
-                              setAmountBdt('')
-                              setError(null)
-                            }}
-                            className="rounded-lg border border-teal-300/20 bg-teal-300/10 px-3 py-2 text-xs font-medium text-teal-100 transition-colors hover:bg-teal-300/15"
-                          >
-                            Add Credit
-                          </button>
+                          <div className="inline-flex flex-wrap justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedUser(user)
+                                setAmountBdt('')
+                                setError(null)
+                              }}
+                              className="rounded-lg border border-teal-300/20 bg-teal-300/10 px-3 py-2 text-xs font-medium text-teal-100 transition-colors hover:bg-teal-300/15"
+                            >
+                              Add Credit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setManualOrderUserId(user.id)
+                                setIsManualOrderOpen(true)
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-sky-300/20 bg-sky-300/10 px-3 py-2 text-xs font-medium text-sky-100 transition-colors hover:bg-sky-300/15"
+                            >
+                              <Plus className="size-3.5" aria-hidden="true" />
+                              Create Manual Print Job
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -276,6 +314,21 @@ export default function AdminCreditsPage() {
           )}
         </section>
       </main>
+      <ManualOrderModal
+        open={isManualOrderOpen}
+        onOpenChange={setIsManualOrderOpen}
+        initialUserId={manualOrderUserId}
+        onCreated={() => {
+          setToast('Manual print job created.')
+          void refreshUsers().catch((refreshError: unknown) => {
+            setError(
+              refreshError instanceof Error
+                ? refreshError.message
+                : 'Could not refresh wallet balances.',
+            )
+          })
+        }}
+      />
     </>
   )
 }
