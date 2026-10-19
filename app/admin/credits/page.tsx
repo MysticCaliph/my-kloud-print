@@ -2,9 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CheckCircle2, Plus, Search, Wallet } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Loader2, Plus, Search, Trash2, Wallet } from 'lucide-react'
 import { Navbar } from '@/components/Navbar'
 import { ManualOrderModal } from '@/components/admin/manual-order-modal'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 interface CreditUser {
   id: string
@@ -26,11 +34,13 @@ export default function AdminCreditsPage() {
   const [query, setQuery] = useState('')
   const [users, setUsers] = useState<CreditUser[]>([])
   const [selectedUser, setSelectedUser] = useState<CreditUser | null>(null)
+  const [userToDelete, setUserToDelete] = useState<CreditUser | null>(null)
   const [isManualOrderOpen, setIsManualOrderOpen] = useState(false)
   const [manualOrderUserId, setManualOrderUserId] = useState<string | null>(null)
   const [amountBdt, setAmountBdt] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
@@ -118,6 +128,46 @@ export default function AdminCreditsPage() {
       setError(submitError instanceof Error ? submitError.message : 'Could not add wallet credit.')
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  async function handleDeleteUser() {
+    if (!userToDelete) return
+
+    setDeletingUserId(userToDelete.id)
+    setError(null)
+    try {
+      const response = await fetch('/api/admin/delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userToDelete.id }),
+      })
+      const result = (await response.json()) as { success?: boolean; message?: string; error?: string }
+      if (!response.ok || !result.success) {
+        throw new Error(result.error ?? 'Could not delete the user account.')
+      }
+
+      setUserToDelete(null)
+      setUsers((current) => current.filter((user) => user.id !== userToDelete.id))
+      setSelectedUser((current) => (current?.id === userToDelete.id ? null : current))
+      setToast(`${userToDelete.name}'s account was deleted successfully.`)
+      try {
+        await refreshUsers()
+      } catch (refreshError) {
+        setError(
+          refreshError instanceof Error
+            ? `Account deleted, but the user list could not be refreshed: ${refreshError.message}`
+            : 'Account deleted, but the user list could not be refreshed.',
+        )
+      }
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : 'Could not delete the user account.',
+      )
+    } finally {
+      setDeletingUserId(null)
     }
   }
 
@@ -229,6 +279,22 @@ export default function AdminCreditsPage() {
                           <div className="inline-flex flex-wrap justify-end gap-2">
                             <button
                               type="button"
+                              disabled={deletingUserId === user.id}
+                              onClick={() => {
+                                setError(null)
+                                setUserToDelete(user)
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-rose-400/25 bg-rose-400/10 px-3 py-2 text-xs font-medium text-rose-200 transition-colors hover:bg-rose-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {deletingUserId === user.id ? (
+                                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <Trash2 className="size-3.5" aria-hidden="true" />
+                              )}
+                              {deletingUserId === user.id ? 'Deleting…' : 'Delete Account'}
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => {
                                 setSelectedUser(user)
                                 setAmountBdt('')
@@ -329,6 +395,43 @@ export default function AdminCreditsPage() {
           })
         }}
       />
+      <Dialog
+        open={userToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && deletingUserId === null) setUserToDelete(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Account</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to completely delete {userToDelete?.name}? This action cannot
+              be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              type="button"
+              disabled={deletingUserId !== null}
+              onClick={() => setUserToDelete(null)}
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-white/10 px-4 text-sm font-medium text-slate-300 transition-colors hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={deletingUserId !== null}
+              onClick={() => void handleDeleteUser()}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-rose-500 px-4 text-sm font-semibold text-white transition-colors hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {deletingUserId !== null && (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              )}
+              {deletingUserId !== null ? 'Deleting account…' : 'Delete Account'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
