@@ -21,6 +21,7 @@ export interface AccountPrintOrder {
   address: string
   total: number
   status: 'QUEUED' | 'PRINTED' | 'DELIVERED'
+  fileStoragePath?: string | null
 }
 
 export interface WalletTransaction {

@@ -20,6 +20,7 @@ import { Navbar } from '@/components/Navbar'
 import { AccountDialog } from '@/components/dashboard/account-dialog'
 import { Button } from '@/components/ui/button'
 import type { AccountPrintOrder, WalletTransaction } from '@/lib/account-store'
+import { generateManualJobReceiptPdf } from '@/lib/pdf-stamper'
 import { formatBDT } from '@/lib/print'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import { useSupabaseAccount } from '@/lib/supabase/use-account'
@@ -50,7 +51,7 @@ function formatDate(value: string, short = false) {
   return (short ? SHORT_DATE_FORMAT : DATE_FORMAT).format(date)
 }
 
-async function downloadStampedCopy(order: AccountPrintOrder) {
+async function generateStampedCopy(order: AccountPrintOrder) {
   const pdf = await PDFDocument.create()
   const page = pdf.addPage([612, 792])
   const regular = await pdf.embedFont(StandardFonts.Helvetica)
@@ -123,13 +124,7 @@ async function downloadStampedCopy(order: AccountPrintOrder) {
   })
 
   const bytes = await pdf.save()
-  const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = `${order.token.slice(1)}-stamped-copy.pdf`
-  anchor.click()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  return new Blob([bytes as BlobPart], { type: 'application/pdf' })
 }
 
 function OrderStatus({ status }: { status: AccountPrintOrder['status'] }) {
@@ -191,7 +186,7 @@ export default function AccountPage() {
       const { data, error } = await supabase
         .from('print_jobs')
         .select(
-          'token, created_at, total_pages, original_filename, paper_size, color_mode, copies, delivery_address, total_cost_poisha, status',
+          'token, created_at, total_pages, original_filename, paper_size, color_mode, copies, delivery_address, total_cost_poisha, status, file_storage_path',
         )
         .eq('user_id', account.id)
         .order('created_at', { ascending: false })
@@ -222,6 +217,7 @@ export default function AccountPage() {
             copies: job.copies,
             address: job.delivery_address,
             total: job.total_cost_poisha / 100,
+            fileStoragePath: job.file_storage_path,
             status:
               job.status === 'PRINTED' || job.status === 'DELIVERED'
                 ? job.status
@@ -259,11 +255,34 @@ export default function AccountPage() {
     }
   }, [account])
 
-  async function handleDownload(order: AccountPrintOrder) {
+  async function handleDownloadStampedPdf(order: AccountPrintOrder) {
     setDownloadingToken(order.token)
     setDownloadError(null)
     try {
-      await downloadStampedCopy(order)
+      let pdfBlob: Blob
+      if (order.fileStoragePath) {
+        pdfBlob = await generateStampedCopy(order)
+      } else {
+        pdfBlob = await generateManualJobReceiptPdf({
+          order_token: order.token,
+          job_title: order.fileName,
+          paper_size: order.paperSize,
+          print_type: order.color,
+          page_count: order.pages,
+          copies: order.copies,
+          total_price: order.total,
+          created_at: order.submittedAt,
+          customer_info: account
+            ? `${account.name}${account.phone ? ` - ${account.phone}` : ''}`
+            : undefined,
+        })
+      }
+      const url = URL.createObjectURL(pdfBlob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `PrintKloud-Stamp-${order.token}.pdf`
+      anchor.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch (error) {
       const reason = error instanceof Error ? ` ${error.message}` : ''
       setDownloadError(`Could not prepare the stamped copy.${reason}`)
@@ -454,7 +473,7 @@ export default function AccountPage() {
                             </div>
                             <Button
                               variant="outline"
-                              onClick={() => void handleDownload(order)}
+                              onClick={() => void handleDownloadStampedPdf(order)}
                               disabled={downloadingToken === order.token}
                               className="h-9 shrink-0 gap-2 border-white/10 bg-white/[0.03] text-slate-200 hover:bg-white/[0.07]"
                             >
