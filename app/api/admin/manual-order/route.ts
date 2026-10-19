@@ -212,23 +212,35 @@ export async function POST(request: Request) {
     }
 
     try {
+      const p_user_id = userId
+      const p_amount_poisha = Math.round(totalCostPoisha)
+      if (!Number.isSafeInteger(p_amount_poisha)) {
+        return jsonError('The wallet deduction amount must be a whole number of poisha.', 400)
+      }
+      console.log('RPC Payload:', { p_user_id, p_amount_poisha })
+
       const { data, error } = await supabaseAdmin.rpc('atomic_deduct_print_cost', {
-        p_user_id: userId,
-        p_amount_poisha: totalCostPoisha,
+        p_user_id,
+        p_amount_poisha,
       })
-      if (error) throw error
+      console.log('Supabase RPC Response:', { data, error })
+      console.error('Supabase RPC Error Details:', error)
+
+      const errorMessage = error?.message || error?.details || 'Unknown error'
+      if (error) return jsonError(errorMessage, 500)
       if (!isConfirmedRpcSuccess(data)) {
-        return jsonError('Wallet deduction was not confirmed.', 500)
+        console.error('Wallet deduction RPC returned an unconfirmed result:', data)
+        return jsonError(errorMessage, 500)
       }
     } catch (error) {
       const message =
         error instanceof Error
-          ? error.message
+          ? error.message || 'Unknown error'
           : typeof error === 'object' &&
               error !== null &&
               'message' in error &&
               typeof error.message === 'string'
-            ? error.message
+            ? error.message || 'Unknown error'
             : String(error)
       console.error(`Manual print order wallet deduction failed: ${message}`, error)
       return jsonError(message, 500)
@@ -238,34 +250,48 @@ export async function POST(request: Request) {
   const digits = randomInt(1000, 10000)
   const suffix = randomBytes(3).toString('hex').toUpperCase()
   const token = `#PRT-${digits}-${suffix}`
-  const { data: job, error: insertError } = await supabaseAdmin
-    .from('print_jobs')
-    .insert({
-      token,
-      user_id: userId,
-      customer_name:
-        (typeof customerName === 'string' && customerName.trim()) ||
-        customer.full_name?.trim() ||
-        'Customer',
-      customer_phone:
-        (typeof customerPhone === 'string' && customerPhone.trim()) ||
-        customer.phone_number?.trim() ||
-        '',
-      original_filename: originalFilename?.trim() || 'Manual Admin Job (No PDF)',
-      file_storage_path: null,
-      paper_size: paperSize,
-      color_mode: colorMode,
-      total_pages: totalPages,
-      copies,
-      total_cost_poisha: totalCostPoisha,
-      status: 'queued',
-      delivery_option: deliveryOption.trim(),
-    })
-    .select('id')
-    .single()
+  let jobId: string | null = null
+  let insertErrorMessage: string | null = null
+  try {
+    const { data: job, error: insertError } = await supabaseAdmin
+      .from('print_jobs')
+      .insert({
+        token,
+        user_id: userId,
+        customer_name:
+          (typeof customerName === 'string' && customerName.trim()) ||
+          customer.full_name?.trim() ||
+          'Customer',
+        customer_phone:
+          (typeof customerPhone === 'string' && customerPhone.trim()) ||
+          customer.phone_number?.trim() ||
+          '',
+        original_filename: originalFilename?.trim() || 'Manual Admin Job (No PDF)',
+        file_storage_path: null,
+        paper_size: paperSize,
+        color_mode: colorMode,
+        total_pages: totalPages,
+        copies,
+        total_cost_poisha: totalCostPoisha,
+        status: 'queued',
+        delivery_option: deliveryOption.trim(),
+      })
+      .select('id')
+      .single()
 
-  if (insertError || !job) {
-    console.error('Manual print order insert failed:', insertError ?? 'No job record returned.')
+    if (insertError) {
+      console.error('Print Jobs Insert Error:', insertError)
+      insertErrorMessage = insertError.message
+    } else {
+      jobId = job?.id ?? null
+    }
+  } catch (insertError) {
+    console.error('Print Jobs Insert Error:', insertError)
+    insertErrorMessage =
+      insertError instanceof Error ? insertError.message : String(insertError)
+  }
+
+  if (insertErrorMessage || !jobId) {
     if (deductFromWallet) {
       const refunded = await refundWalletDeduction(supabaseAdmin, userId, totalCostPoisha)
       if (!refunded) {
@@ -275,11 +301,14 @@ export async function POST(request: Request) {
         )
       }
     }
-    return jsonError('Could not create the manual print job.', 500)
+    return NextResponse.json(
+      { error: insertErrorMessage || 'The database did not return the created print job.' },
+      { status: 500 },
+    )
   }
 
   return NextResponse.json({
     success: true,
-    job: { id: job.id, token, totalCostPoisha },
+    job: { id: jobId, token, totalCostPoisha },
   })
 }
