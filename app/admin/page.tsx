@@ -156,6 +156,7 @@ function StatusBadge({ status }: { status: OrderStatus }) {
 
 export default function AdminPage() {
   const [orders, setOrders] = useState<PrintOrder[]>([])
+  const [totalRevenueBDT, setTotalRevenueBDT] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
@@ -168,19 +169,34 @@ export default function AdminPage() {
   const fetchPrintJobs = useCallback(async () => {
     try {
       const supabase = createSupabaseBrowserClient()
-      const { data, error } = await supabase
-        .from('print_jobs')
-        .select('*')
-        .order('created_at', { ascending: false })
+      const [ordersResult, revenueResult] = await Promise.all([
+        supabase
+          .from('print_jobs')
+          .select('*')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('print_jobs')
+          .select('status, total_cost_poisha')
+          .not('status', 'in', '("CANCELLED","cancelled","canceled","rejected")'),
+      ])
 
-      if (error) {
-        console.error('Admin Fetch Error Details:', error)
-        setLoadError(error.message)
+      if (ordersResult.error || revenueResult.error) {
+        if (ordersResult.error) {
+          console.error('Admin Fetch Error Details:', ordersResult.error)
+        }
+        if (revenueResult.error) {
+          console.error('Admin Revenue Fetch Error Details:', revenueResult.error)
+        }
+        setLoadError(
+          ordersResult.error?.message ??
+            revenueResult.error?.message ??
+            'Could not load print jobs.',
+        )
         return
       }
 
       setOrders(
-        data.map((job) => {
+        ordersResult.data.map((job) => {
           return {
             id: job.id,
             token: job.token,
@@ -197,6 +213,16 @@ export default function AdminPage() {
             placedAt: job.created_at,
           }
         }),
+      )
+      setTotalRevenueBDT(
+        revenueResult.data
+          .filter(
+            (job) =>
+              !['cancelled', 'canceled', 'rejected'].includes(
+                String(job.status).trim().toLowerCase(),
+              ),
+          )
+          .reduce((total, job) => total + Number(job.total_cost_poisha) / 100, 0),
       )
       setLoadError(null)
     } catch (error) {
@@ -220,10 +246,10 @@ export default function AdminPage() {
         orderCount: orders.filter((order) => new Date(order.placedAt) >= today).length,
         pendingCount: orders.filter((order) => order.status === 'PENDING').length,
         dispatchedCount: orders.filter((order) => order.status === 'DISPATCHED').length,
-        revenue: orders.reduce((sum, order) => sum + order.total, 0),
+        revenue: totalRevenueBDT,
       }
     },
-    [orders],
+    [orders, totalRevenueBDT],
   )
 
   const visibleOrders = useMemo(() => {
