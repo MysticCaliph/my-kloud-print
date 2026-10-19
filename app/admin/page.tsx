@@ -41,7 +41,13 @@ interface PrintOrder {
 }
 
 const STATUSES: OrderStatus[] = ['PENDING', 'PRINTED', 'DISPATCHED', 'DELIVERED', 'CANCELLED']
-const MASTER_STATUSES: OrderStatus[] = ['PENDING', 'PRINTED', 'DISPATCHED', 'DELIVERED']
+const MASTER_STATUSES: OrderStatus[] = [
+  'PENDING',
+  'PRINTED',
+  'DISPATCHED',
+  'DELIVERED',
+  'CANCELLED',
+]
 const FILTERS = ['ALL', ...STATUSES] as const
 type StatusFilter = (typeof FILTERS)[number]
 
@@ -257,21 +263,28 @@ export default function AdminPage() {
     setActionError(null)
     try {
       const supabase = createSupabaseBrowserClient()
-      const { error } = await supabase
-        .from('print_jobs')
-        .update({ status: newStatus })
-        .eq('id', jobId)
-      if (error) {
-        alert('Failed to update status: ' + error.message)
-        setActionError(error.message)
-        return
+      if (newStatus.toUpperCase() === 'CANCELLED') {
+        const { error } = await supabase.rpc('cancel_and_refund_job', {
+          p_job_id: jobId,
+        })
+        if (error) {
+          alert('Failed to cancel order: ' + error.message)
+          setActionError(error.message)
+          return
+        }
+        alert('Order cancelled and wallet refunded successfully')
+      } else {
+        const { error } = await supabase
+          .from('print_jobs')
+          .update({ status: newStatus })
+          .eq('id', jobId)
+        if (error) {
+          alert('Failed to update status: ' + error.message)
+          setActionError(error.message)
+          return
+        }
       }
-      setOrders((current) =>
-        current.map((order) =>
-          order.id === jobId ? { ...order, status: newStatus as OrderStatus } : order,
-        ),
-      )
-      void fetchPrintJobs()
+      await fetchPrintJobs()
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Could not update order status.')
     } finally {
