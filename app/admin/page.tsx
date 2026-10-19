@@ -513,7 +513,7 @@ export default function AdminPage() {
                         <th
                           colSpan={6}
                           scope="rowgroup"
-                          className="border-y border-white/[0.08] px-5 py-3 text-left text-xs font-semibold text-slate-200 shadow-sm"
+                          className="border-y border-white/[0.08] px-5 pt-3 pb-5 text-left text-xs font-semibold text-slate-200 shadow-sm"
                         >
                           <span aria-hidden="true">📅 </span>
                           {dateLabel} ({groupOrders.length} {groupOrders.length === 1 ? 'order' : 'orders'})
