@@ -131,7 +131,7 @@ export default function AccountPage() {
       const { data, error } = await supabase
         .from('print_jobs')
         .select(
-          'token, created_at, total_pages, original_filename, paper_size, color_mode, print_side, upload_method, copies, delivery_address, total_cost_poisha, status, file_storage_path',
+          'token, created_at, total_pages, original_filename, paper_size, color_mode, print_side, upload_method, copies, delivery_option, delivery_address, delivery_notes, total_cost_poisha, status, file_storage_path',
         )
         .eq('user_id', account.id)
         .order('created_at', { ascending: false })
@@ -163,7 +163,9 @@ export default function AccountPage() {
 
 
             copies: job.copies,
-            address: job.delivery_address,
+            deliveryOption: job.delivery_option,
+            address: job.delivery_address || job.delivery_option || 'Flexible / Standard',
+            notes: job.delivery_notes,
             total: job.total_cost_poisha / 100,
             fileStoragePath: job.file_storage_path,
             status:
@@ -220,6 +222,9 @@ export default function AccountPage() {
         total_pages: order.pages,
         copies: order.copies,
         total_price: order.total,
+        delivery_option: order.deliveryOption,
+        delivery_address: order.address,
+        delivery_notes: order.notes,
         created_at: order.submittedAt,
         customer_info: account
           ? `${account.name}${account.phone ? ` - ${account.phone}` : ''}`

@@ -591,12 +591,12 @@ export default function AdminPage() {
                           Delivery: {order.deliveryOption || 'None'}
                         </p>
                         {order.deliveryAddress && (
-                          <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
-                            {order.deliveryAddress}
+                          <p className="mt-1 text-[11px] font-medium leading-4 text-amber-300">
+                            Place: {order.deliveryAddress}
                           </p>
                         )}
                         {order.deliveryNotes && (
-                          <p className="mt-0.5 text-[11px] italic leading-4 text-slate-500">
+                          <p className="mt-1 text-[11px] italic leading-4 text-teal-300/90">
                             Note: {order.deliveryNotes}
                           </p>
                         )}
@@ -613,6 +613,11 @@ export default function AdminPage() {
                           <span className="mx-1.5 text-slate-700">·</span>
                           {order.copies} {order.copies === 1 ? 'copy' : 'copies'}
                         </div>
+                        {order.deliveryNotes && (
+                          <p className="mt-1 max-w-[240px] truncate text-[11px] text-amber-300/80" title={order.deliveryNotes}>
+                            Instructions: {order.deliveryNotes}
+                          </p>
+                        )}
                       </td>
                       <td className="px-5 py-4 align-middle">
                         <span className="font-mono text-sm font-semibold tabular-nums text-slate-100">

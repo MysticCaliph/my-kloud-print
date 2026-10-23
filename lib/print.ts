@@ -10,6 +10,13 @@ export interface PrintOptions {
   copies: number
 }
 
+export const CUSTOM_DELIVERY_OPTION = 'Any Other Place (Charge Applicable)'
+
+export const DELIVERY_FEE_POISHA = {
+  upTo50Pages: 2000, // 20.00 TK
+  over50Pages: 3000, // 30.00 TK
+} as const
+
 // 1 TK = 100 Poisha
 // A4 Single: 1.75 TK (175 poisha/page)
 // A4 Duplex: 3.00 TK/sheet (300 poisha per 2 pages; odd page: 175 poisha)
@@ -36,6 +43,33 @@ export function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+export function isCustomDeliveryOption(deliveryOption?: string | null): boolean {
+  if (!deliveryOption) return false
+  const normalized = deliveryOption.trim().toLowerCase()
+  return (
+    normalized === CUSTOM_DELIVERY_OPTION.toLowerCase() ||
+    normalized.startsWith('any other place')
+  )
+}
+
+/**
+ * Calculates tiered delivery fee in poisha when "Any Other Place (Charge Applicable)" is selected:
+ * - Total printed pages (selectedPages * copies) <= 50: 20 TK (2000 poisha)
+ * - Total printed pages (selectedPages * copies) > 50: 30 TK (3000 poisha)
+ */
+export function calculateDeliveryFeePoisha(
+  selectedPages: number,
+  copies: number,
+  deliveryOption?: string | null,
+): number {
+  if (!isCustomDeliveryOption(deliveryOption)) return 0
+  if (selectedPages <= 0 || copies <= 0) return 0
+  const totalPrintedPages = selectedPages * copies
+  return totalPrintedPages <= 50
+    ? DELIVERY_FEE_POISHA.upTo50Pages
+    : DELIVERY_FEE_POISHA.over50Pages
 }
 
 /** Parses "1-3, 5, 8-10" into a sorted, de-duplicated list of page numbers. */
@@ -128,6 +162,7 @@ export function calculatePrice(
     paperSize: PaperSize
     side: 'single' | 'duplex' | 'SINGLE' | 'DUPLEX'
     copies: number
+    deliveryOption?: string | null
   },
 ) {
   const isA4 = options.paperSize === 'A4'
@@ -139,27 +174,72 @@ export function calculatePrice(
     ? PRINT_RATES_POISHA.A4.duplexSheetPoisha
     : PRINT_RATES_POISHA.Legal.duplexSheetPoisha
 
-  const totalCostPoisha = calculatePrintCostPoisha(
+  const printCostPoisha = calculatePrintCostPoisha(
     selectedPages,
     options.paperSize,
     options.side,
     options.copies,
   )
 
+  const deliveryFeePoisha = calculateDeliveryFeePoisha(
+    selectedPages,
+    options.copies,
+    options.deliveryOption,
+  )
+
+  const grandTotalPoisha = printCostPoisha + deliveryFeePoisha
   const sheetsPerCopy = isDuplex ? Math.ceil(selectedPages / 2) : selectedPages
   const totalSheets = sheetsPerCopy * options.copies
+  const totalPrintedPages = Math.max(0, selectedPages * options.copies)
 
   return {
     ratePoisha: singleRatePoisha,
     rate: singleRatePoisha / 100,
     duplexSheetRatePoisha,
     duplexSheetRate: duplexSheetRatePoisha / 100,
-    printCostPoisha: totalCostPoisha,
-    printCost: totalCostPoisha / 100,
-    grandTotalPoisha: totalCostPoisha,
-    grandTotal: totalCostPoisha / 100,
+    printCostPoisha,
+    printCost: printCostPoisha / 100,
+    deliveryFeePoisha,
+    deliveryFee: deliveryFeePoisha / 100,
+    grandTotalPoisha,
+    grandTotal: grandTotalPoisha / 100,
     sheets: totalSheets,
+    totalPrintedPages,
     fullSheetsPerCopy: Math.floor(selectedPages / 2),
     hasOddPage: selectedPages % 2 === 1,
   }
+}
+
+export function buildOrderMessageText(params: {
+  token?: string | null
+  customerName?: string | null
+  customerPhone?: string | null
+  paperSize: string
+  printSide: string
+  totalPages: number
+  copies: number
+  deliveryOption?: string | null
+  deliveryAddress?: string | null
+  deliveryNotes?: string | null
+}): string {
+  const tokenText = params.token?.trim() || 'Will be generated on submit'
+  const nameText = params.customerName?.trim() || 'Guest / Customer'
+  const phoneText = params.customerPhone?.trim() || 'Not provided'
+  const paperText = params.paperSize.toUpperCase() === 'LEGAL' ? 'Legal' : 'A4'
+  const sideText = params.printSide.toUpperCase() === 'DUPLEX' ? 'Duplex' : 'Single'
+  const deliveryOpt = params.deliveryOption?.trim() || 'Flexible / Skip'
+  const customPlace = params.deliveryAddress?.trim()
+  const deliveryDisplay = customPlace ? `${deliveryOpt} - ${customPlace}` : deliveryOpt
+  const notesDisplay = params.deliveryNotes?.trim() || 'None'
+
+  return [
+    'Hello PrintKloud! Here are my print job details:',
+    `• Order Token: ${tokenText}`,
+    `• Name: ${nameText}`,
+    `• Phone: ${phoneText}`,
+    `• Specs: ${paperText} (${sideText}) | ${params.totalPages} Pages × ${params.copies} Copies`,
+    `• Delivery: ${deliveryDisplay}`,
+    `• Notes: ${notesDisplay}`,
+    '(Attached is my file for printing)',
+  ].join('\n')
 }

@@ -1,6 +1,7 @@
 import { randomBytes, randomInt } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { calculateManualOrderCostPoisha, type ManualPrintSide } from '@/lib/manual-order'
+import { isCustomDeliveryOption } from '@/lib/print'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
@@ -107,6 +108,10 @@ export async function POST(request: Request) {
   const totalPages = input.totalPages
   const copies = input.copies
   const deliveryOption = input.deliveryOption
+  const deliveryAddress =
+    typeof input.deliveryAddress === 'string' ? input.deliveryAddress.trim() : ''
+  const deliveryNotes =
+    typeof input.deliveryNotes === 'string' ? input.deliveryNotes.trim() : ''
   const customerName = input.customerName
   const customerPhone = input.customerPhone
   const originalFilename = input.originalFilename
@@ -141,6 +146,9 @@ export async function POST(request: Request) {
   ) {
     return jsonError('Select a delivery option of 200 characters or fewer.', 400)
   }
+  if (isCustomDeliveryOption(deliveryOption) && !deliveryAddress) {
+    return jsonError('Enter a custom delivery location / place name.', 400)
+  }
   if (
     customerName !== undefined &&
     (typeof customerName !== 'string' || customerName.length > 200)
@@ -168,6 +176,7 @@ export async function POST(request: Request) {
     printSide,
     totalPages,
     copies,
+    deliveryOption,
   )
   if (!Number.isSafeInteger(totalCostPoisha) || totalCostPoisha <= 0) {
     return jsonError('The calculated order total is outside the supported range.', 400)
@@ -255,6 +264,8 @@ export async function POST(request: Request) {
         total_cost_poisha: totalCostPoisha,
         status: 'queued',
         delivery_option: deliveryOption.trim(),
+        delivery_address: deliveryAddress || null,
+        delivery_notes: deliveryNotes || null,
         is_manual: true,
       })
       .select('id')

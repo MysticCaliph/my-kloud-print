@@ -6,10 +6,7 @@ import {
   Check,
   ChevronDown,
   Loader2,
-  Plus,
   Search,
-  User,
-  Wallet,
   X,
 } from 'lucide-react'
 import { createAdminManualOrder } from '@/lib/admin-orders'
@@ -18,7 +15,13 @@ import {
   type ManualPaperSize,
   type ManualPrintSide,
 } from '@/lib/manual-order'
-import { formatBDT } from '@/lib/print'
+import {
+  CUSTOM_DELIVERY_OPTION,
+  calculateDeliveryFeePoisha,
+  calculatePrintCostPoisha,
+  formatBDT,
+  isCustomDeliveryOption,
+} from '@/lib/print'
 
 interface ManualOrderUser {
   id: string
@@ -39,6 +42,7 @@ const DELIVERY_OPTIONS = [
   'Receive from DR MA Rashid Hall (8:00 PM - 8:30 PM)',
   'Pick up from Laboratory School or Mohona Shop (Anytime)',
   'Direct Collection from Shop Counter',
+  CUSTOM_DELIVERY_OPTION,
 ]
 
 function getWalletBalancePoisha(user: ManualOrderUser | undefined) {
@@ -77,6 +81,8 @@ export function ManualOrderModal({
   const [totalPages, setTotalPages] = useState('1')
   const [copies, setCopies] = useState('1')
   const [deliveryOption, setDeliveryOption] = useState<string>('')
+  const [deliveryAddress, setDeliveryAddress] = useState<string>('')
+  const [deliveryNotes, setDeliveryNotes] = useState<string>('')
   const [jobTitle, setJobTitle] = useState('')
   const [deductFromWallet, setDeductFromWallet] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -130,9 +136,24 @@ export function ManualOrderModal({
   const copyCount = Number(copies)
   const pageCountValid = Number.isSafeInteger(pageCount) && pageCount >= 1
   const copyCountValid = Number.isSafeInteger(copyCount) && copyCount >= 1
+  const isCustomPlace = isCustomDeliveryOption(deliveryOption)
+
+  const printCostPoisha =
+    pageCountValid && copyCountValid
+      ? calculatePrintCostPoisha(
+          pageCount,
+          paperSize === 'LEGAL' ? 'Legal' : 'A4',
+          printSide,
+          copyCount,
+        )
+      : 0
+  const deliveryFeePoisha =
+    pageCountValid && copyCountValid
+      ? calculateDeliveryFeePoisha(pageCount, copyCount, deliveryOption)
+      : 0
   const totalCostPoisha =
     pageCountValid && copyCountValid
-      ? calculateManualOrderCostPoisha(paperSize, printSide, pageCount, copyCount)
+      ? calculateManualOrderCostPoisha(paperSize, printSide, pageCount, copyCount, deliveryOption)
       : 0
   const totalCostValid = Number.isSafeInteger(totalCostPoisha) && totalCostPoisha > 0
   const walletBalancePoisha = getWalletBalancePoisha(selectedUser)
@@ -147,6 +168,8 @@ export function ManualOrderModal({
     setTotalPages('1')
     setCopies('1')
     setDeliveryOption('')
+    setDeliveryAddress('')
+    setDeliveryNotes('')
     setJobTitle('')
     setDeductFromWallet(false)
     setSubmitError(null)
@@ -190,16 +213,20 @@ export function ManualOrderModal({
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selectedUser || !pageCountValid || !copyCountValid || !totalCostValid) return
+    if (!deliveryOption) {
+      setSubmitError('Select a delivery option.')
+      return
+    }
+    if (isCustomPlace && !deliveryAddress.trim()) {
+      setSubmitError('Enter the custom delivery location / place name.')
+      return
+    }
     if (
       deductFromWallet &&
       walletBalancePoisha !== null &&
       walletBalancePoisha < totalCostPoisha
     ) {
       setSubmitError('Insufficient wallet balance.')
-      return
-    }
-    if (!deliveryOption) {
-      setSubmitError('Select a delivery option.')
       return
     }
 
@@ -215,6 +242,8 @@ export function ManualOrderModal({
         totalPages: pageCount,
         copies: copyCount,
         deliveryOption,
+        deliveryAddress: isCustomPlace ? deliveryAddress.trim() : undefined,
+        deliveryNotes: deliveryNotes.trim() || undefined,
         deductFromWallet,
         originalFilename: jobTitle.trim() || 'Manual Admin Job (No PDF)',
       })
@@ -244,7 +273,7 @@ export function ManualOrderModal({
         onClick={() => onOpenChange(false)}
       />
 
-      <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl border border-white/[0.08] bg-[#101722] p-6 shadow-2xl shadow-black/40">
+      <div className="relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/[0.08] bg-[#101722] p-6 shadow-2xl shadow-black/40">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 id="manual-order-title" className="text-lg font-semibold text-white">
@@ -452,18 +481,59 @@ export function ManualOrderModal({
             </select>
           </label>
 
-          <div className="flex items-center justify-between rounded-lg border border-white/[0.08] bg-[#0b111b] px-3 py-3">
-            <div>
-              <p className="text-sm font-medium text-slate-200">Order total</p>
-              <p className="text-xs text-slate-500">
-                {pageCountValid && copyCountValid
-                  ? `${pageCount} pages · ${printSide === 'DUPLEX' ? 'Duplex' : 'Single'} · ${copyCount} ${copyCount === 1 ? 'copy' : 'copies'}`
-                  : 'Enter a valid page and copy count'}
+          {isCustomPlace && (
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="font-medium text-amber-300">
+                Custom Delivery Location / Place Name *
+              </span>
+              <input
+                required
+                type="text"
+                maxLength={200}
+                placeholder="e.g. Lalan Shah Hall Room 304, Pocket Gate..."
+                value={deliveryAddress}
+                onChange={(event) => setDeliveryAddress(event.target.value)}
+                className="h-10 rounded-lg border border-amber-500/40 bg-[#0b111b] px-3 text-sm text-slate-100 placeholder:text-slate-600 outline-none focus:border-amber-400"
+              />
+            </label>
+          )}
+
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium">Additional Printing Instructions / Notes (optional)</span>
+            <textarea
+              rows={2}
+              maxLength={500}
+              placeholder="Print page 1-10 only, staple top-left, spiral bind, etc."
+              value={deliveryNotes}
+              onChange={(event) => setDeliveryNotes(event.target.value)}
+              className="rounded-lg border border-white/[0.12] bg-[#0b111b] px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 outline-none focus:border-teal-300/50"
+            />
+          </label>
+
+          <div className="space-y-1.5 rounded-lg border border-white/[0.08] bg-[#0b111b] px-3.5 py-3">
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span>Printing Cost</span>
+              <span className="font-mono">{formatBDT(printCostPoisha / 100)}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span>Delivery Charge</span>
+              <span className="font-mono">
+                {deliveryFeePoisha > 0 ? `+ ${formatBDT(deliveryFeePoisha / 100)}` : '৳0.00 (Free)'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between border-t border-white/[0.07] pt-2">
+              <div>
+                <p className="text-sm font-medium text-slate-200">Total Cost</p>
+                <p className="text-xs text-slate-500">
+                  {pageCountValid && copyCountValid
+                    ? `${pageCount} pages · ${printSide === 'DUPLEX' ? 'Duplex' : 'Single'} · ${copyCount} ${copyCount === 1 ? 'copy' : 'copies'}`
+                    : 'Enter a valid page and copy count'}
+                </p>
+              </div>
+              <p className="font-mono text-lg font-semibold tabular-nums text-teal-200">
+                {totalCostValid ? formatBDT(totalCostPoisha / 100) : '—'}
               </p>
             </div>
-            <p className="font-mono text-lg font-semibold tabular-nums text-teal-200">
-              {totalCostValid ? formatBDT(totalCostPoisha / 100) : '—'}
-            </p>
           </div>
 
           <label className="flex items-start gap-2.5 text-sm text-slate-200">

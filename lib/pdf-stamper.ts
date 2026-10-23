@@ -1,5 +1,10 @@
 import { PDFDocument, StandardFonts, degrees, rgb, type PDFImage } from 'pdf-lib'
 import QRCode from 'qrcode'
+import {
+  calculateDeliveryFeePoisha,
+  calculatePrintCostPoisha,
+  type PaperSize,
+} from '@/lib/print'
 
 export interface OfficialReceiptData {
   order_token: string
@@ -14,6 +19,9 @@ export interface OfficialReceiptData {
   copies: number
   total_price?: number
   total_cost_poisha?: number | bigint
+  delivery_option?: string | null
+  delivery_address?: string | null
+  delivery_notes?: string | null
   created_at: string
   job_title?: string
   print_type?: string
@@ -131,11 +139,9 @@ async function resolveLogoBytes(provided?: Uint8Array): Promise<Uint8Array | nul
 async function embedLogoImage(pdfDoc: PDFDocument, bytes: Uint8Array | null): Promise<PDFImage | null> {
   if (!bytes || bytes.byteLength < 4) return null
   try {
-    // PNG magic bytes: 89 50 4E 47
     if (bytes[0] === 0x89 && bytes[1] === 0x50) {
       return await pdfDoc.embedPng(bytes)
     }
-    // JPEG magic bytes: FF D8
     if (bytes[0] === 0xff && bytes[1] === 0xd8) {
       return await pdfDoc.embedJpg(bytes)
     }
@@ -183,7 +189,7 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
 
   const marginLeft = 24
   const marginRight = width - 24
-  const midX = 182
+  const midX = 176
 
   const drawDashedHLine = (yPos: number, thickness = 0.85) => {
     page.drawLine({
@@ -209,9 +215,9 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
   const logoBytes = await resolveLogoBytes(data.logo_bytes)
   const logoImage = await embedLogoImage(pdfDoc, logoBytes)
 
-  const logoSize = 36
+  const logoSize = 34
   const logoX = marginRight - logoSize
-  const logoY = height - 56
+  const logoY = height - 52
 
   if (logoImage) {
     page.drawImage(logoImage, {
@@ -221,7 +227,6 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
       height: logoSize,
     })
   } else {
-    // Graceful vector logo fallback
     page.drawCircle({
       x: logoX + logoSize / 2,
       y: logoY + logoSize / 2,
@@ -233,7 +238,7 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
     const pkWidth = courierBold.widthOfTextAtSize(pkFallback, 11)
     page.drawText(pkFallback, {
       x: logoX + (logoSize - pkWidth) / 2,
-      y: logoY + 13,
+      y: logoY + 12,
       size: 11,
       font: courierBold,
       color: black,
@@ -241,22 +246,22 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
   }
 
   const brandText = 'PrintKloud'
-  const brandSize = 16
+  const brandSize = 15.5
   const brandWidth = courierBold.widthOfTextAtSize(brandText, brandSize)
   page.drawText(brandText, {
     x: logoX - brandWidth - 8,
-    y: logoY + 18,
+    y: logoY + 17,
     size: brandSize,
     font: courierBold,
     color: black,
   })
 
   const brandSubText = 'printkloud.me'
-  const brandSubSize = 8
+  const brandSubSize = 7.8
   const brandSubWidth = courier.widthOfTextAtSize(brandSubText, brandSubSize)
   page.drawText(brandSubText, {
     x: logoX - brandSubWidth - 8,
-    y: logoY + 6,
+    y: logoY + 5,
     size: brandSubSize,
     font: courier,
     color: darkGray,
@@ -264,11 +269,11 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
 
   // 2. Centered Title: RECEIPT
   const receiptTitle = 'RECEIPT'
-  const receiptTitleSize = 15
+  const receiptTitleSize = 14.5
   const receiptTitleWidth = courierBold.widthOfTextAtSize(receiptTitle, receiptTitleSize)
   page.drawText(receiptTitle, {
     x: (width - receiptTitleWidth) / 2,
-    y: height - 80,
+    y: height - 74,
     size: receiptTitleSize,
     font: courierBold,
     color: black,
@@ -279,7 +284,7 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
   const tokenDisplay = data.order_token || 'N/A'
   const uploadMethodDisplay =
     data.upload_method?.toUpperCase() || (data.job_title?.includes('Manual') ? 'MANUAL' : 'DIRECT')
-  const paperDisplay =
+  const paperDisplay: PaperSize =
     data.paper_size?.toUpperCase() === 'LEGAL' ? 'Legal' : 'A4'
   const sideDisplay =
     data.print_side?.toUpperCase() === 'DUPLEX' ? 'Duplex' : 'Single'
@@ -288,34 +293,64 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
   const copiesVal = Math.max(1, Number(data.copies || 1))
   const pagesAndCopiesDisplay = `${totalPagesVal}p x ${copiesVal}`
 
-  const totalTk =
+  const totalPoisha =
     data.total_cost_poisha != null
-      ? (Number(data.total_cost_poisha) / 100).toFixed(2)
-      : Number(data.total_price ?? 0).toFixed(2)
+      ? Number(data.total_cost_poisha)
+      : Math.round(Number(data.total_price ?? 0) * 100)
+
+  const computedPrintPoisha = calculatePrintCostPoisha(
+    totalPagesVal,
+    paperDisplay,
+    sideDisplay === 'Duplex' ? 'DUPLEX' : 'SINGLE',
+    copiesVal,
+  )
+
+  const computedDeliveryPoisha =
+    data.delivery_option != null
+      ? calculateDeliveryFeePoisha(totalPagesVal, copiesVal, data.delivery_option)
+      : Math.max(0, totalPoisha - computedPrintPoisha)
+
+  const effectiveDeliveryPoisha =
+    computedDeliveryPoisha > 0
+      ? computedDeliveryPoisha
+      : Math.max(0, totalPoisha - computedPrintPoisha)
+
+  const effectiveOrderAmountPoisha = Math.max(0, totalPoisha - effectiveDeliveryPoisha)
+
+  const orderAmountTk = (effectiveOrderAmountPoisha / 100).toFixed(2)
+  const deliveryFeeTk = (effectiveDeliveryPoisha / 100).toFixed(2)
+  const totalTk = (totalPoisha / 100).toFixed(2)
 
   const formattedOrderDate = formatReceiptDate(data.created_at)
 
+  const deliveryPlaceDisplay =
+    data.delivery_address?.trim() ||
+    data.delivery_option?.trim() ||
+    'Standard / Counter'
+
+  const printingNotesDisplay = data.delivery_notes?.trim() || ''
+
   const fitRightColumnText = (val: string, font: typeof courier, size: number, maxW: number) => {
-    let trimmed = val
+    const clean = val.replace(/[\r\n]+/g, ' ').trim()
+    let trimmed = clean
     while (trimmed.length > 1 && font.widthOfTextAtSize(trimmed, size) > maxW) {
       trimmed = trimmed.slice(0, -1)
     }
     return trimmed
   }
 
-  let cursorY = height - 94
-  const sectionHeaderHeight = 21
-  const rowHeight = 20
+  let cursorY = height - 86
+  const sectionHeaderHeight = 19
+  const rowHeight = 18.5
   const maxRightColWidth = marginRight - midX - 10
 
   const drawSection = (title: string, rows: [string, string][], boldValues = false) => {
-    // Section Header between dashed lines
     drawDashedHLine(cursorY)
-    const headerFontSize = 9.5
+    const headerFontSize = 9.2
     const titleWidth = courierBold.widthOfTextAtSize(title, headerFontSize)
     page.drawText(title, {
       x: (width - titleWidth) / 2,
-      y: cursorY - 14,
+      y: cursorY - 13,
       size: headerFontSize,
       font: courierBold,
       color: black,
@@ -326,9 +361,9 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
     const rowsStartY = cursorY
     for (let i = 0; i < rows.length; i++) {
       const [label, rawValue] = rows[i]
-      const rowTextY = cursorY - 13.5
-      const labelFontSize = 8.8
-      const valueFontSize = 8.8
+      const rowTextY = cursorY - 12.5
+      const labelFontSize = 8.4
+      const valueFontSize = 8.4
       const valueFont = boldValues ? courierBold : courier
 
       page.drawText(label, {
@@ -366,33 +401,38 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
   ])
 
   // Section 2: Order Information
-  drawSection('Order Information', [
+  const orderRows: [string, string][] = [
     ['Service Name', 'PrintKloud (B&W)'],
     ['Order Token', tokenDisplay],
     ['Upload Method', uploadMethodDisplay],
     ['Paper & Side', paperAndSideDisplay],
     ['Pages & Copies', pagesAndCopiesDisplay],
-  ])
+    ['Delivery Place', deliveryPlaceDisplay],
+  ]
+  if (printingNotesDisplay) {
+    orderRows.push(['Printing Notes', printingNotesDisplay])
+  }
+  drawSection('Order Information', orderRows)
 
   // Section 3: Payment Information
   drawSection('Payment Information', [
     ['PrintKloud Contact', '01518962340'],
     ['Order Date', formattedOrderDate],
-    ['Order Amount', `BDT ${totalTk}`],
-    ['Service Fee', '0.00'],
+    ['Order Amount', `BDT ${orderAmountTk}`],
+    ['Delivery / Service Fee', `BDT ${deliveryFeeTk}`],
   ])
 
   // Section 4: Total Row (Between dashed lines)
   drawDashedHLine(cursorY, 1.0)
   const totalRowTopY = cursorY
-  const totalRowHeight = 24
+  const totalRowHeight = 22
   const totalLabel = 'Payment Received'
   const totalValue = `BDT ${totalTk}`
-  const totalFontSize = 9.5
+  const totalFontSize = 9.2
 
   page.drawText(totalLabel, {
     x: marginLeft + 4,
-    y: cursorY - 15.5,
+    y: cursorY - 14.5,
     size: totalFontSize,
     font: courierBold,
     color: black,
@@ -401,7 +441,7 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
   const totalValueWidth = courierBold.widthOfTextAtSize(totalValue, totalFontSize)
   page.drawText(totalValue, {
     x: marginRight - 4 - totalValueWidth,
-    y: cursorY - 15.5,
+    y: cursorY - 14.5,
     size: totalFontSize,
     font: courierBold,
     color: black,
@@ -413,9 +453,9 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
 
   // 5. Bottom Stamp & QR Code Area
   const stampCenterX = 112
-  const stampCenterY = 180
-  const outerRadius = 46
-  const innerRadius = 40
+  const stampCenterY = 165
+  const outerRadius = 44
+  const innerRadius = 38
 
   // Double circle border for vector stamp
   page.drawCircle({
@@ -437,43 +477,43 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
   // Stamp top & bottom banners
   let stampTopBanner = 'THANK YOU • VERIFIED'
   try {
-    courierBold.widthOfTextAtSize(stampTopBanner, 5.6)
+    courierBold.widthOfTextAtSize(stampTopBanner, 5.5)
   } catch {
     stampTopBanner = 'THANK YOU * VERIFIED'
   }
-  const topBannerWidth = courierBold.widthOfTextAtSize(stampTopBanner, 5.6)
+  const topBannerWidth = courierBold.widthOfTextAtSize(stampTopBanner, 5.5)
   page.drawText(stampTopBanner, {
     x: stampCenterX - topBannerWidth / 2,
-    y: stampCenterY + 21,
-    size: 5.6,
+    y: stampCenterY + 20,
+    size: 5.5,
     font: courierBold,
     color: black,
   })
 
   const bottomBanner = 'PRINTKLOUD OFFICIAL'
-  const bottomBannerWidth = courierBold.widthOfTextAtSize(bottomBanner, 5.4)
+  const bottomBannerWidth = courierBold.widthOfTextAtSize(bottomBanner, 5.3)
   page.drawText(bottomBanner, {
     x: stampCenterX - bottomBannerWidth / 2,
-    y: stampCenterY - 25,
-    size: 5.4,
+    y: stampCenterY - 24,
+    size: 5.3,
     font: courierBold,
     color: black,
   })
 
   // Tilted "PAID" center inside a double-line stamp bar
   page.drawRectangle({
-    x: stampCenterX - 28,
+    x: stampCenterX - 27,
     y: stampCenterY - 10,
-    width: 56,
-    height: 20,
+    width: 54,
+    height: 19,
     borderColor: black,
     borderWidth: 1.2,
     rotate: degrees(12),
   })
   page.drawText('PAID', {
-    x: stampCenterX - 18,
+    x: stampCenterX - 17,
     y: stampCenterY - 7,
-    size: 15,
+    size: 14.5,
     font: courierBold,
     color: black,
     rotate: degrees(12),
@@ -484,8 +524,8 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
   const qrPngBytes = await generateQrPngBuffer(qrPayload)
   const qrImage = await pdfDoc.embedPng(qrPngBytes)
 
-  const qrBoxSize = 90
-  const qrBoxX = 228
+  const qrBoxSize = 86
+  const qrBoxX = 230
   const qrBoxY = stampCenterY - qrBoxSize / 2 + 4
 
   page.drawRectangle({
@@ -517,14 +557,14 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
   })
 
   // 6. Custom Footer at Bottom
-  drawDashedHLine(62, 0.75)
+  drawDashedHLine(58, 0.75)
 
   const footerLine1 = 'This receipt has been generated electronically'
   const footerLine1Size = 8.2
   const footerLine1Width = courier.widthOfTextAtSize(footerLine1, footerLine1Size)
   page.drawText(footerLine1, {
     x: (width - footerLine1Width) / 2,
-    y: 42,
+    y: 39,
     size: footerLine1Size,
     font: courier,
     color: darkGray,
@@ -535,7 +575,7 @@ export async function createOfficialReceiptPdfBytes(data: OfficialReceiptData): 
   const footerLine2Width = courierBold.widthOfTextAtSize(footerLine2, footerLine2Size)
   page.drawText(footerLine2, {
     x: (width - footerLine2Width) / 2,
-    y: 27,
+    y: 25,
     size: footerLine2Size,
     font: courierBold,
     color: black,

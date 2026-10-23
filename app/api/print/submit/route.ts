@@ -3,7 +3,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import QRCode from 'qrcode'
 import { NextResponse } from 'next/server'
 import type { User } from '@supabase/supabase-js'
-import { calculatePrice, type PaperSize } from '@/lib/print'
+import { calculatePrice, isCustomDeliveryOption, type PaperSize } from '@/lib/print'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
@@ -324,6 +324,7 @@ export async function POST(request: Request) {
   const submittedUserId = form.get('userId')
   const phoneValue = form.get('customerPhone')
   const deliveryOptionValue = form.get('deliveryOption')
+  const deliveryAddressValue = form.get('deliveryAddress')
   const deliveryNotesValue = form.get('deliveryNotes')
   const pageRangeValue = form.get('pageRange') ?? form.get('selectedPageRange')
   const paperSizeValue = form.get('paperSize')
@@ -351,8 +352,17 @@ export async function POST(request: Request) {
     typeof deliveryOptionValue === 'string' && deliveryOptionValue.trim()
       ? deliveryOptionValue.trim()
       : 'Not specified (Customer skipped)'
+  const deliveryAddress =
+    typeof deliveryAddressValue === 'string' ? deliveryAddressValue.trim() : ''
   const deliveryNotes =
     typeof deliveryNotesValue === 'string' ? deliveryNotesValue.trim() : ''
+
+  if (isCustomDeliveryOption(deliveryOption) && !deliveryAddress) {
+    return jsonError(
+      'Please enter a delivery location / place name for "Any Other Place (Charge Applicable)".',
+      400,
+    )
+  }
 
   const totalPages = parsePositiveInteger(form.get('totalPages'))
   const copies = parsePositiveInteger(form.get('copies'))
@@ -422,10 +432,14 @@ export async function POST(request: Request) {
     paperSize: paperSizeValue,
     side: printSide === 'DUPLEX' ? 'duplex' : 'single',
     copies,
+    deliveryOption,
   })
   const totalCostPoisha = price.grandTotalPoisha
   if (submittedTotalCostPoisha !== totalCostPoisha) {
-    return jsonError('Submitted total cost does not match the page count, paper size, and print side.', 400)
+    return jsonError(
+      'Submitted total cost does not match the page count, paper size, print side, and delivery option.',
+      400,
+    )
   }
 
   // Deduct from wallet atomically
@@ -466,6 +480,8 @@ export async function POST(request: Request) {
         customer_name: finalCustomerName,
         customer_phone: phoneValue.trim(),
         delivery_option: deliveryOption,
+        delivery_address: deliveryAddress || null,
+        delivery_notes: deliveryNotes || null,
         total_pages: selectedPagesCount,
         color_mode: 'bw',
         paper_size: paperSizeValue,
@@ -494,6 +510,10 @@ export async function POST(request: Request) {
     if (tokenInsertError) throw tokenInsertError
 
     // Handle Telegram dispatch
+    const deliveryWithAddress = deliveryAddress
+      ? `${deliveryOption} (${deliveryAddress})`
+      : deliveryOption
+
     if (uploadMethod === 'DIRECT' && originalPdfBuffer && telegramBotToken && telegramChatId) {
       try {
         const stampPdfBuffer = await createStampPdf({
@@ -506,7 +526,7 @@ export async function POST(request: Request) {
           printSide: printSide === 'DUPLEX' ? 'Duplex' : 'Single',
           uploadMethod,
           copies,
-          deliveryOption,
+          deliveryOption: deliveryWithAddress,
           totalCostBdt: totalCostPoisha / 100,
         })
 
@@ -514,7 +534,7 @@ export async function POST(request: Request) {
           tokenCode,
           customerName: finalCustomerName,
           customerPhone: phoneValue.trim(),
-          deliveryOption,
+          deliveryOption: deliveryWithAddress,
           selectedPageCount: selectedPagesCount,
           pageRange: finalPageRange,
           paperSize: paperSizeValue,
@@ -551,7 +571,8 @@ export async function POST(request: Request) {
         `• *Specs:* ${selectedPagesCount} pgs · ${paperSizeValue} · ${printSide} · B&W · x${copies}\n` +
         `• *Total:* Tk. ${totalCostBdt}\n` +
         `• *Method:* ${uploadMethod} (Customer sends file directly)\n` +
-        `• *Delivery:* ${escapeMarkdown(deliveryOption)}`
+        `• *Delivery:* ${escapeMarkdown(deliveryWithAddress)}` +
+        (deliveryNotes ? `\n• *Notes:* ${escapeMarkdown(deliveryNotes)}` : '')
 
       await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
         method: 'POST',

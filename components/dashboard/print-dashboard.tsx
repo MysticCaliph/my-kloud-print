@@ -3,16 +3,23 @@
 import { useState } from 'react'
 import {
   ArrowDownToLine,
+  Check,
   CheckCircle2,
+  Copy,
+  ExternalLink,
   FileUp,
+  MapPin,
   MessageCircle,
   Send,
-  ExternalLink,
+  StickyNote,
 } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import {
+  CUSTOM_DELIVERY_OPTION,
+  buildOrderMessageText,
   calculatePrice,
   formatBDT,
+  isCustomDeliveryOption,
   pagesToRange,
   type PaperSize,
   type PrintOptions,
@@ -42,7 +49,121 @@ const DEFAULT_OPTIONS: PrintOptions = {
   copies: 1,
 }
 
+const STANDARD_DELIVERY_OPTIONS = [
+  'Get the printed copy next class (8:00 AM - 9:40 AM)',
+  'Receive from DR MA Rashid Hall (8:00 PM - 8:30 PM)',
+  'Pick up from Laboratory School or Mohona Shop (Anytime)',
+] as const
+
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function CopyableOrderMessageBox({
+  messageText,
+  uploadMethod,
+  title,
+  subtitle,
+}: {
+  messageText: string
+  uploadMethod: UploadMethod
+  title?: string
+  subtitle?: string
+}) {
+  const [copied, setCopied] = useState(false)
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(messageText)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2200)
+    } catch {
+      const textarea = document.createElement('textarea')
+      textarea.value = messageText
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2200)
+    }
+  }
+
+  const encodedText = encodeURIComponent(messageText)
+  const isWhatsapp = uploadMethod === 'WHATSAPP'
+
+  return (
+    <div className="rounded-xl border border-border bg-background/80 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-semibold tracking-wide text-foreground uppercase">
+            {title || `Copy-Paste Order Message for ${isWhatsapp ? 'WhatsApp' : 'Telegram'}`}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {subtitle ||
+              'Copy this pre-formatted message and send it along with your document to 01518962340.'}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void handleCopy()}
+          className={cn(
+            'inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors',
+            copied
+              ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+              : 'border-primary/40 bg-primary/15 text-primary hover:bg-primary/25',
+          )}
+        >
+          {copied ? (
+            <>
+              <Check className="size-3.5" aria-hidden="true" />
+              Copied! ✓
+            </>
+          ) : (
+            <>
+              <Copy className="size-3.5" aria-hidden="true" />
+              Copy Message
+            </>
+          )}
+        </button>
+      </div>
+
+      <textarea
+        readOnly
+        value={messageText}
+        rows={8}
+        onClick={(e) => e.currentTarget.select()}
+        aria-label="Order details message template"
+        className="mt-3 w-full resize-none rounded-lg border border-border bg-muted/40 p-3 font-mono text-xs leading-relaxed text-foreground outline-none focus:border-primary"
+      />
+
+      <div className="mt-3 flex flex-wrap items-center gap-2.5">
+        {isWhatsapp ? (
+          <a
+            href={`https://wa.me/8801518962340?text=${encodedText}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3.5 text-xs font-semibold text-white shadow transition-colors hover:bg-emerald-500"
+          >
+            <MessageCircle className="size-4" />
+            Open WhatsApp (01518962340) with Pre-filled Text
+            <ExternalLink className="size-3.5 opacity-75" />
+          </a>
+        ) : (
+          <a
+            href={`https://t.me/+8801518962340?text=${encodedText}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-sky-600 px-3.5 text-xs font-semibold text-white shadow transition-colors hover:bg-sky-500"
+          >
+            <Send className="size-4" />
+            Open Telegram (01518962340) with Pre-filled Text
+            <ExternalLink className="size-3.5 opacity-75" />
+          </a>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export function PrintDashboard() {
   const { account, refresh } = useSupabaseAccount()
@@ -53,6 +174,8 @@ export function PrintDashboard() {
   const [selectedPages, setSelectedPages] = useState<number[]>([])
   const [manualPageCount, setManualPageCount] = useState<number>(1)
   const [deliveryOption, setDeliveryOption] = useState<string>('')
+  const [customDeliveryAddress, setCustomDeliveryAddress] = useState<string>('')
+  const [printingNotes, setPrintingNotes] = useState<string>('')
   const [options, setOptions] = useState<PrintOptions>(DEFAULT_OPTIONS)
   const [isAccountOpen, setIsAccountOpen] = useState(false)
   const [isCheckoutPromptOpen, setIsCheckoutPromptOpen] = useState(false)
@@ -63,6 +186,8 @@ export function PrintDashboard() {
   const [lastJob, setLastJob] = useState<{
     name: string
     total: number
+    printCost: number
+    deliveryFee: number
     paymentMethod: 'wallet' | 'delivery'
     token: string
     uploadMethod: UploadMethod
@@ -70,6 +195,11 @@ export function PrintDashboard() {
     printSide: 'single' | 'duplex'
     pages: number
     copies: number
+    customerName: string
+    customerPhone: string
+    deliveryOption: string
+    deliveryAddress: string
+    deliveryNotes: string
     jobId?: string
   } | null>(null)
 
@@ -78,14 +208,54 @@ export function PrintDashboard() {
       ? selectedPages.length
       : Math.max(1, Math.floor(manualPageCount) || 1)
 
-  const price = calculatePrice(effectivePageCount, options)
+  const isCustomPlace = isCustomDeliveryOption(deliveryOption)
+
+  const price = calculatePrice(effectivePageCount, {
+    ...options,
+    deliveryOption,
+  })
+
   const hasJob =
     uploadMethod === 'DIRECT'
       ? Boolean(file) && selectedPages.length > 0
       : manualPageCount >= 1
 
+  const liveOrderMessageText = buildOrderMessageText({
+    token: null,
+    customerName: account?.name || 'Customer',
+    customerPhone: account?.phone || 'Not provided',
+    paperSize: options.paperSize,
+    printSide: options.side,
+    totalPages: effectivePageCount,
+    copies: options.copies,
+    deliveryOption: deliveryOption || 'Flexible / Skip',
+    deliveryAddress: isCustomPlace ? customDeliveryAddress : '',
+    deliveryNotes: printingNotes,
+  })
+
+  const confirmedOrderMessageText = lastJob
+    ? buildOrderMessageText({
+        token: lastJob.token,
+        customerName: lastJob.customerName,
+        customerPhone: lastJob.customerPhone,
+        paperSize: lastJob.paperSize,
+        printSide: lastJob.printSide,
+        totalPages: lastJob.pages,
+        copies: lastJob.copies,
+        deliveryOption: lastJob.deliveryOption || 'Flexible / Skip',
+        deliveryAddress: lastJob.deliveryAddress,
+        deliveryNotes: lastJob.deliveryNotes,
+      })
+    : ''
+
   async function handleSubmit(continueAsGuest = isGuest) {
     if (!hasJob) return
+    if (isCustomPlace && !customDeliveryAddress.trim()) {
+      setSubmissionError(
+        'Please enter your custom delivery location / place name for "Any Other Place (Charge Applicable)".',
+      )
+      return
+    }
     if (account && (balance === null || price.grandTotal > balance)) return
     if (!account && !continueAsGuest) {
       setIsCheckoutPromptOpen(true)
@@ -102,6 +272,8 @@ export function PrintDashboard() {
           setLastJob({
             name: uploadMethod === 'DIRECT' ? file?.name || 'Document' : `${uploadMethod} Print`,
             total: price.grandTotal,
+            printCost: price.printCost,
+            deliveryFee: price.deliveryFee,
             paymentMethod: 'delivery',
             token: dummyToken,
             uploadMethod,
@@ -109,6 +281,11 @@ export function PrintDashboard() {
             printSide: options.side,
             pages: effectivePageCount,
             copies: options.copies,
+            customerName: 'Guest Customer',
+            customerPhone: 'On Delivery',
+            deliveryOption: deliveryOption || 'Flexible / Skip',
+            deliveryAddress: isCustomPlace ? customDeliveryAddress.trim() : '',
+            deliveryNotes: printingNotes.trim(),
           })
         }
       } else {
@@ -127,6 +304,12 @@ export function PrintDashboard() {
         formData.append('totalCostPoisha', String(price.grandTotalPoisha))
         formData.append('customerPhone', account.phone)
         formData.append('deliveryOption', deliveryOption)
+        if (isCustomPlace && customDeliveryAddress.trim()) {
+          formData.append('deliveryAddress', customDeliveryAddress.trim())
+        }
+        if (printingNotes.trim()) {
+          formData.append('deliveryNotes', printingNotes.trim())
+        }
 
         if (uploadMethod === 'DIRECT' && file) {
           formData.append('file', file.file, file.name)
@@ -155,6 +338,8 @@ export function PrintDashboard() {
         setLastJob({
           name: uploadMethod === 'DIRECT' ? file?.name || 'Document' : `${uploadMethod} Order`,
           total: price.grandTotal,
+          printCost: price.printCost,
+          deliveryFee: price.deliveryFee,
           paymentMethod: 'wallet',
           token: result.token,
           uploadMethod,
@@ -162,6 +347,11 @@ export function PrintDashboard() {
           printSide: options.side,
           pages: effectivePageCount,
           copies: options.copies,
+          customerName: account.name || 'Customer',
+          customerPhone: account.phone,
+          deliveryOption: deliveryOption || 'Flexible / Skip',
+          deliveryAddress: isCustomPlace ? customDeliveryAddress.trim() : '',
+          deliveryNotes: printingNotes.trim(),
           jobId: result.job_id,
         })
         await refresh()
@@ -171,6 +361,8 @@ export function PrintDashboard() {
       setSelectedPages([])
       setOptions(DEFAULT_OPTIONS)
       setDeliveryOption('')
+      setCustomDeliveryAddress('')
+      setPrintingNotes('')
       setIsGuest(false)
     } catch (error) {
       setSubmissionError(error instanceof Error ? error.message : 'Order submission failed.')
@@ -178,13 +370,6 @@ export function PrintDashboard() {
       setIsSubmitting(false)
     }
   }
-
-  // Generate pre-filled WhatsApp message
-  const whatsappPreFilledText = lastJob
-    ? encodeURIComponent(
-        `Hello PrintKloud! Here is my document for Order ${lastJob.token}.\n\nOrder Specs:\n• Paper: ${lastJob.paperSize}\n• Side: ${lastJob.printSide === 'duplex' ? 'Duplex' : 'Single'}\n• Pages: ${lastJob.pages}\n• Copies: ${lastJob.copies}\n• Total: ৳${lastJob.total.toFixed(2)}`,
-      )
-    : ''
 
   return (
     <TooltipProvider>
@@ -224,56 +409,24 @@ export function PrintDashboard() {
                   </span>{' '}
                   from your wallet ({lastJob.pages} pages · {lastJob.paperSize} ·{' '}
                   {lastJob.printSide === 'duplex' ? 'Duplex' : 'Single'} · x{lastJob.copies}{' '}
-                  copies).
+                  copies
+                  {lastJob.deliveryFee > 0
+                    ? ` · includes ${formatBDT(lastJob.deliveryFee)} delivery charge`
+                    : ''}
+                  ).
                 </p>
 
-                {/* Specific WhatsApp action */}
-                {lastJob.uploadMethod === 'WHATSAPP' && (
-                  <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-                    <p className="text-sm font-medium text-emerald-200">
-                      Step 2: Send your document to WhatsApp (01518962340)
-                    </p>
-                    <p className="mt-1 text-xs text-emerald-300/80">
-                      Click below to open WhatsApp with your pre-filled Order ID ({lastJob.token}).
-                      Regular WhatsApp file size limits apply.
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2.5">
-                      <a
-                        href={`https://wa.me/8801518962340?text=${whatsappPreFilledText}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white shadow transition-colors hover:bg-emerald-500"
-                      >
-                        <MessageCircle className="size-4" />
-                        Send Document via WhatsApp
-                        <ExternalLink className="size-3.5 opacity-70" />
-                      </a>
-                    </div>
-                  </div>
-                )}
-
-                {/* Specific Telegram action */}
-                {lastJob.uploadMethod === 'TELEGRAM' && (
-                  <div className="mt-4 rounded-xl border border-sky-500/30 bg-sky-500/10 p-4">
-                    <p className="text-sm font-medium text-sky-200">
-                      Step 2: Send your document to Telegram (01518962340)
-                    </p>
-                    <p className="mt-1 text-xs text-sky-300/80">
-                      Please send your PDF file along with your Order Token ({lastJob.token}) to{' '}
-                      <span className="font-mono font-semibold">01518962340</span> on Telegram.
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2.5">
-                      <a
-                        href="https://t.me/+8801518962340"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex h-10 items-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow transition-colors hover:bg-sky-500"
-                      >
-                        <Send className="size-4" />
-                        Open Telegram (01518962340)
-                        <ExternalLink className="size-3.5 opacity-70" />
-                      </a>
-                    </div>
+                {/* Copyable message box & direct links for WhatsApp / Telegram orders */}
+                {(lastJob.uploadMethod === 'WHATSAPP' || lastJob.uploadMethod === 'TELEGRAM') && (
+                  <div className="mt-4">
+                    <CopyableOrderMessageBox
+                      messageText={confirmedOrderMessageText}
+                      uploadMethod={lastJob.uploadMethod}
+                      title={`Step 2: Copy & Send Your Order Message via ${
+                        lastJob.uploadMethod === 'WHATSAPP' ? 'WhatsApp' : 'Telegram'
+                      } (01518962340)`}
+                      subtitle={`Your Order Token (${lastJob.token}) is now included below. Copy or click the button to send with your file.`}
+                    />
                   </div>
                 )}
 
@@ -406,7 +559,7 @@ export function PrintDashboard() {
                     onSelectedPagesChange={setSelectedPages}
                   />
                 ) : (
-                  <div className="rounded-xl border border-dashed border-border bg-muted/20 p-5">
+                  <div className="flex flex-col gap-4 rounded-xl border border-dashed border-border bg-muted/20 p-5">
                     <div className="flex flex-col gap-3">
                       <div className="flex items-center justify-between">
                         <div>
@@ -414,8 +567,8 @@ export function PrintDashboard() {
                             {uploadMethod === 'WHATSAPP' ? 'WhatsApp' : 'Telegram'} File Submission
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Enter the total pages of your document. You will send the file to{' '}
-                            <span className="font-semibold text-foreground">01518962340</span> after ordering.
+                            Enter the total pages of your document. Submit the order to generate your Order Token, then send the file to{' '}
+                            <span className="font-semibold text-foreground">01518962340</span>.
                           </p>
                         </div>
                         <span
@@ -430,7 +583,7 @@ export function PrintDashboard() {
                         </span>
                       </div>
 
-                      <div className="mt-2 flex items-center gap-3">
+                      <div className="mt-1 flex items-center gap-3">
                         <label
                           htmlFor="page-count-input"
                           className="text-sm font-medium text-foreground whitespace-nowrap"
@@ -451,6 +604,12 @@ export function PrintDashboard() {
                         <span className="text-xs text-muted-foreground">pages in document</span>
                       </div>
                     </div>
+
+                    {/* Live Copy-Pasteable Message Preview */}
+                    <CopyableOrderMessageBox
+                      messageText={liveOrderMessageText}
+                      uploadMethod={uploadMethod}
+                    />
                   </div>
                 )}
               </div>
@@ -459,19 +618,40 @@ export function PrintDashboard() {
             {/* 2. Print Options Panel */}
             <PrintOptionsPanel options={options} onChange={setOptions} />
 
-            {/* 3. Delivery Method */}
+            {/* 3. Additional Printing Instructions / Notes (Optional) */}
+            <section className="rounded-xl border border-border bg-card p-5 sm:p-6">
+              <div className="flex items-center gap-2">
+                <StickyNote className="size-4 text-primary" aria-hidden="true" />
+                <label
+                  htmlFor="printing-notes-textarea"
+                  className="text-sm font-semibold text-foreground"
+                >
+                  Additional Printing Instructions / Notes (Optional)
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Add any special page instructions, binding preferences, or finishing notes for the print operator.
+              </p>
+              <textarea
+                id="printing-notes-textarea"
+                rows={3}
+                maxLength={500}
+                value={printingNotes}
+                onChange={(e) => setPrintingNotes(e.target.value)}
+                placeholder="Print page 1-10 only, staple top-left, spiral bind, etc."
+                className="mt-3 w-full rounded-lg border border-border bg-background/60 px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/15"
+              />
+            </section>
+
+            {/* 4. Delivery Method */}
             <section className="rounded-xl border border-border bg-card p-5 sm:p-6">
               <fieldset>
                 <legend className="text-sm font-semibold">Delivery arrangement (optional)</legend>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Choose a convenient handoff, or skip for a flexible arrangement.
+                  Choose a free campus pickup/handoff point, or select custom delivery to any other place.
                 </p>
                 <div className="mt-3 grid gap-2">
-                  {[
-                    'Get the printed copy next class (8:00 AM - 9:40 AM)',
-                    'Receive from DR MA Rashid Hall (8:00 PM - 8:30 PM)',
-                    'Pick up from Laboratory School or Mohona Shop (Anytime)',
-                  ].map((option) => {
+                  {STANDARD_DELIVERY_OPTIONS.map((option) => {
                     const isSelected = deliveryOption === option
                     return (
                       <button
@@ -480,24 +660,101 @@ export function PrintDashboard() {
                         role="radio"
                         aria-checked={isSelected}
                         onClick={() => setDeliveryOption(isSelected ? '' : option)}
-                        className={`flex items-center gap-3 rounded-lg border px-3 py-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
+                        className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
                           isSelected
                             ? 'border-primary bg-primary/10'
                             : 'border-border bg-background/50 hover:border-muted-foreground/40'
                         }`}
                       >
-                        <span
-                          aria-hidden="true"
-                          className={`flex size-4 shrink-0 items-center justify-center rounded-full border ${
-                            isSelected ? 'border-primary bg-primary' : 'border-input'
-                          }`}
-                        >
-                          {isSelected && <span className="size-1.5 rounded-full bg-primary-foreground" />}
+                        <span className="flex items-center gap-3">
+                          <span
+                            aria-hidden="true"
+                            className={`flex size-4 shrink-0 items-center justify-center rounded-full border ${
+                              isSelected ? 'border-primary bg-primary' : 'border-input'
+                            }`}
+                          >
+                            {isSelected && (
+                              <span className="size-1.5 rounded-full bg-primary-foreground" />
+                            )}
+                          </span>
+                          <span>{option}</span>
                         </span>
-                        {option}
+                        <span className="shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400">
+                          Free
+                        </span>
                       </button>
                     )
                   })}
+
+                  {/* Any Other Place (Charge Applicable) */}
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={isCustomPlace}
+                    onClick={() =>
+                      setDeliveryOption(isCustomPlace ? '' : CUSTOM_DELIVERY_OPTION)
+                    }
+                    className={`flex flex-col gap-1.5 rounded-lg border px-3 py-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
+                      isCustomPlace
+                        ? 'border-amber-500/60 bg-amber-500/10'
+                        : 'border-border bg-background/50 hover:border-muted-foreground/40'
+                    }`}
+                  >
+                    <div className="flex w-full items-center justify-between gap-3">
+                      <span className="flex items-center gap-3 font-medium">
+                        <span
+                          aria-hidden="true"
+                          className={`flex size-4 shrink-0 items-center justify-center rounded-full border ${
+                            isCustomPlace ? 'border-amber-400 bg-amber-400' : 'border-input'
+                          }`}
+                        >
+                          {isCustomPlace && (
+                            <span className="size-1.5 rounded-full bg-slate-950" />
+                          )}
+                        </span>
+                        <span>{CUSTOM_DELIVERY_OPTION}</span>
+                      </span>
+                      <span className="shrink-0 rounded-full border border-amber-400/30 bg-amber-400/15 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-amber-300">
+                        +৳20 / +৳30
+                      </span>
+                    </div>
+                    <p className="pl-7 text-xs text-muted-foreground">
+                      Tiered fee by total printed pages (pages × copies):{' '}
+                      <span className="font-medium text-foreground">≤ 50 pages = ৳20.00</span> ·{' '}
+                      <span className="font-medium text-foreground">&gt; 50 pages = ৳30.00</span>
+                    </p>
+                  </button>
+
+                  {/* Custom delivery location input when "Any Other Place" is chosen */}
+                  {isCustomPlace && (
+                    <div className="mt-1 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3.5">
+                      <label
+                        htmlFor="custom-delivery-place"
+                        className="flex items-center gap-1.5 text-xs font-semibold text-amber-200"
+                      >
+                        <MapPin className="size-3.5 text-amber-400" aria-hidden="true" />
+                        Delivery Location / Place Name (Required) *
+                      </label>
+                      <input
+                        id="custom-delivery-place"
+                        type="text"
+                        required
+                        maxLength={200}
+                        value={customDeliveryAddress}
+                        onChange={(e) => setCustomDeliveryAddress(e.target.value)}
+                        placeholder="e.g., Lalan Shah Hall Room 304, Pocket Gate, Fulbarigate..."
+                        className="mt-2 h-10 w-full rounded-lg border border-amber-500/40 bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20"
+                      />
+                      <p className="mt-1.5 text-[11px] text-amber-300/80">
+                        Current job ({price.totalPrintedPages} total printed pages):{' '}
+                        <span className="font-mono font-semibold">
+                          +{formatBDT(price.deliveryFee)}
+                        </span>{' '}
+                        delivery charge applied.
+                      </p>
+                    </div>
+                  )}
+
                   <button
                     type="button"
                     role="radio"
@@ -515,7 +772,9 @@ export function PrintDashboard() {
                         !deliveryOption ? 'border-primary bg-primary' : 'border-input'
                       }`}
                     >
-                      {!deliveryOption && <span className="size-1.5 rounded-full bg-primary-foreground" />}
+                      {!deliveryOption && (
+                        <span className="size-1.5 rounded-full bg-primary-foreground" />
+                      )}
                     </span>
                     Skip / Flexible
                   </button>
@@ -530,6 +789,8 @@ export function PrintDashboard() {
                 selectedPages={effectivePageCount}
                 options={options}
                 price={price}
+                deliveryOption={deliveryOption}
+                deliveryAddress={isCustomPlace ? customDeliveryAddress : ''}
               />
               {account ? (
                 <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2.5 text-sm">

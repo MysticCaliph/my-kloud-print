@@ -9,6 +9,8 @@ export interface CreateAdminManualOrderInput {
   totalPages: number
   copies: number
   deliveryOption?: string
+  deliveryAddress?: string
+  deliveryNotes?: string
   deductFromWallet: boolean
   originalFilename?: string
 }
@@ -32,6 +34,8 @@ export async function createAdminManualOrder({
   totalPages,
   copies,
   deliveryOption,
+  deliveryAddress,
+  deliveryNotes,
   deductFromWallet,
   originalFilename,
 }: CreateAdminManualOrderInput) {
@@ -48,6 +52,8 @@ export async function createAdminManualOrder({
       totalPages,
       copies,
       deliveryOption: deliveryOption || 'Admin Creation',
+      deliveryAddress: deliveryAddress || undefined,
+      deliveryNotes: deliveryNotes || undefined,
       deductFromWallet,
       originalFilename: originalFilename || 'Manual Admin Job (No PDF)',
     }),

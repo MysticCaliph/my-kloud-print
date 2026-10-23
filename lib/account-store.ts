@@ -20,7 +20,9 @@ export interface AccountPrintOrder {
   printSide?: 'Single' | 'Duplex' | 'SINGLE' | 'DUPLEX'
   uploadMethod?: 'DIRECT' | 'WHATSAPP' | 'TELEGRAM' | string
   copies: number
+  deliveryOption?: string | null
   address: string
+  notes?: string | null
   total: number
   status: 'QUEUED' | 'PRINTED' | 'DELIVERED'
   fileStoragePath?: string | null

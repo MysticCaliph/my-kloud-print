@@ -77,7 +77,7 @@ export async function GET(request: Request) {
   const { data: job, error: jobError } = await supabaseAdmin
     .from('print_jobs')
     .select(
-      'token, user_id, customer_name, customer_phone, delivery_option, total_pages, paper_size, color_mode, print_side, upload_method, copies, total_cost_poisha, created_at, original_filename',
+      'token, user_id, customer_name, customer_phone, delivery_option, delivery_address, delivery_notes, total_pages, paper_size, color_mode, print_side, upload_method, copies, total_cost_poisha, created_at, original_filename',
     )
     .eq('id', id)
     .maybeSingle()
@@ -119,6 +119,9 @@ export async function GET(request: Request) {
       total_pages: job.total_pages,
       copies: job.copies,
       total_cost_poisha: job.total_cost_poisha,
+      delivery_option: job.delivery_option,
+      delivery_address: job.delivery_address,
+      delivery_notes: job.delivery_notes,
       created_at: job.created_at,
       job_title: job.original_filename,
       logo_bytes: logoBytes,
