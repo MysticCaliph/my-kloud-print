@@ -1,12 +1,11 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { Check, Copy, Minus, Palette, Plus } from 'lucide-react'
+import { Check, Copy, Minus, Plus, Settings2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   MAX_COPIES,
   type PaperSize,
-  type PrintColor,
   type PrintOptions,
   type PrintSide,
 } from '@/lib/print'
@@ -82,20 +81,6 @@ function RadioCardGroup<T extends string>({
   )
 }
 
-function ColorSwatch({ color }: { color: PrintColor }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        'mt-0.5 size-8 shrink-0 rounded-md border border-border',
-        color === 'bw'
-          ? 'bg-[linear-gradient(135deg,#fafafa_0%,#fafafa_50%,#171717_50%,#171717_100%)]'
-          : 'bg-[conic-gradient(from_45deg,#06b6d4,#e2136e,#facc15,#06b6d4)]',
-      )}
-    />
-  )
-}
-
 function PaperIcon({ size }: { size: PaperSize }) {
   return (
     <span aria-hidden="true" className="mt-0.5 flex size-8 shrink-0 items-end justify-center">
@@ -109,7 +94,7 @@ function PaperIcon({ size }: { size: PaperSize }) {
   )
 }
 
-function SideIcon({ side }: { side: PrintSide }) {
+function SideIcon({ side }: { side: 'single' | 'duplex' }) {
   return (
     <span aria-hidden="true" className="relative mt-0.5 flex size-8 shrink-0 items-center justify-center">
       {side === 'duplex' && (
@@ -137,35 +122,19 @@ export function PrintOptionsPanel({ options, onChange }: PrintOptionsPanelProps)
       aria-labelledby="options-heading"
       className="rounded-xl border border-border bg-card p-5 sm:p-6"
     >
-      <div className="mb-5 flex items-center gap-2">
-        <Palette className="size-4 text-muted-foreground" aria-hidden="true" />
-        <h2 id="options-heading" className="text-base font-semibold">
-          2. Print options
-        </h2>
+      <div className="mb-5 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Settings2 className="size-4 text-muted-foreground" aria-hidden="true" />
+          <h2 id="options-heading" className="text-base font-semibold">
+            Print specifications
+          </h2>
+        </div>
+        <span className="rounded-md border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+          Black &amp; White only
+        </span>
       </div>
 
       <div className="flex flex-col gap-6">
-        <RadioCardGroup<PrintColor>
-          name="color"
-          legend="Print color"
-          value={options.color}
-          onChange={(v) => update('color', v)}
-          options={[
-            {
-              value: 'bw',
-              label: 'Black & White',
-              description: '৳1.75 – ৳2.00 / page',
-              visual: <ColorSwatch color="bw" />,
-            },
-            {
-              value: 'color',
-              label: 'Full Color',
-              description: '৳2.75 – ৳3.25 / page',
-              visual: <ColorSwatch color="color" />,
-            },
-          ]}
-        />
-
         <RadioCardGroup<PaperSize>
           name="paper"
           legend="Paper size"
@@ -174,20 +143,20 @@ export function PrintOptionsPanel({ options, onChange }: PrintOptionsPanelProps)
           options={[
             {
               value: 'A4',
-              label: 'A4',
-              description: '210 × 297 mm',
+              label: 'A4 Paper',
+              description: 'Single ৳1.75 / Duplex ৳3.00',
               visual: <PaperIcon size="A4" />,
             },
             {
               value: 'Legal',
-              label: 'Legal',
-              description: '216 × 356 mm',
+              label: 'Legal Paper',
+              description: 'Single ৳2.25 / Duplex ৳4.00',
               visual: <PaperIcon size="Legal" />,
             },
           ]}
         />
 
-        <RadioCardGroup<PrintSide>
+        <RadioCardGroup<'single' | 'duplex'>
           name="side"
           legend="Print side"
           value={options.side}
@@ -201,8 +170,8 @@ export function PrintOptionsPanel({ options, onChange }: PrintOptionsPanelProps)
             },
             {
               value: 'duplex',
-              label: 'Duplex',
-              description: 'Both sides, saves paper',
+              label: 'Duplex (Both sides)',
+              description: 'Saves paper · Discounted rate',
               visual: <SideIcon side="duplex" />,
             },
           ]}

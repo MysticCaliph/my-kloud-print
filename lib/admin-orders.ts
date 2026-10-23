@@ -1,12 +1,11 @@
-import type { ManualPaperSize } from '@/lib/manual-order'
-import type { PrintColor } from '@/lib/print'
+import type { ManualPaperSize, ManualPrintSide } from '@/lib/manual-order'
 
 export interface CreateAdminManualOrderInput {
   userId: string
   customerName?: string
   customerPhone?: string
   paperSize: ManualPaperSize
-  colorMode: PrintColor
+  printSide?: ManualPrintSide
   totalPages: number
   copies: number
   deliveryOption?: string
@@ -29,7 +28,7 @@ export async function createAdminManualOrder({
   customerName,
   customerPhone,
   paperSize,
-  colorMode,
+  printSide = 'SINGLE',
   totalPages,
   copies,
   deliveryOption,
@@ -44,7 +43,8 @@ export async function createAdminManualOrder({
       customerName,
       customerPhone,
       paperSize,
-      colorMode,
+      printSide,
+      colorMode: 'bw',
       totalPages,
       copies,
       deliveryOption: deliveryOption || 'Admin Creation',

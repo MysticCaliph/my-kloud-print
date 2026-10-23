@@ -11,6 +11,7 @@ export interface SupabaseAccount {
   phone: string
   balance: number | null
   createdAt: string
+  avatarType: 'male' | 'female'
 }
 
 interface AccountState {
@@ -43,7 +44,7 @@ export function useSupabaseAccount() {
         await Promise.all([
           supabase
             .from('profiles')
-            .select('full_name, phone_number')
+            .select('full_name, phone_number, avatar_type')
             .eq('id', user.id)
             .maybeSingle(),
           supabase
@@ -58,7 +59,11 @@ export function useSupabaseAccount() {
 
       const metadataName = user.user_metadata?.full_name
       const metadataPhone = user.user_metadata?.phone_number
+      const metadataAvatar = user.user_metadata?.avatar_type
       const walletBalancePoisha = Number(wallet?.balance_poisha)
+      const avatarType: 'male' | 'female' =
+        profile?.avatar_type === 'female' || metadataAvatar === 'female' ? 'female' : 'male'
+
       setState({
         account: {
           id: user.id,
@@ -76,6 +81,7 @@ export function useSupabaseAccount() {
               ? walletBalancePoisha / 100
               : null,
           createdAt: user.created_at,
+          avatarType,
         },
         isLoading: false,
         error: null,

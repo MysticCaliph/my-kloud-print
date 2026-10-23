@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { AccountDialog } from '@/components/dashboard/account-dialog'
 import { Button } from '@/components/ui/button'
+import { UserAvatar } from '@/components/UserAvatar'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import { useSupabaseAccount } from '@/lib/supabase/use-account'
 import { formatBDT } from '@/lib/print'
@@ -352,8 +353,8 @@ export function Navbar() {
                   onClick={() => setIsProfileMenuOpen((open) => !open)}
                   className="inline-flex h-10 max-w-48 items-center gap-2 rounded-lg border border-white/[0.09] bg-white/[0.035] px-2.5 text-sm text-slate-200 transition-colors hover:bg-white/[0.07]"
                 >
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-teal-200/10 text-teal-200">
-                    <UserRound className="size-3.5" aria-hidden="true" />
+                  <span className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-md">
+                    <UserAvatar type={account.avatarType} className="size-6" aria-hidden="true" />
                   </span>
                   <span className="max-w-24 truncate">{account.name.split(' ')[0]}</span>
                   <ChevronDown className="size-3.5 text-slate-500" aria-hidden="true" />

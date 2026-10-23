@@ -1,10 +1,27 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
-import QRCode from 'qrcode'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { createOfficialReceiptPdfBytes } from '@/lib/pdf-stamper'
 
 export const runtime = 'nodejs'
+
+let cachedLogoBytes: Uint8Array | null = null
+
+async function getProjectLogoBytes(): Promise<Uint8Array | undefined> {
+  if (cachedLogoBytes) return cachedLogoBytes
+  try {
+    const buf = await readFile(path.join(process.cwd(), 'public', 'logo.jpg'))
+    if (buf.byteLength > 0) {
+      cachedLogoBytes = new Uint8Array(buf)
+      return cachedLogoBytes
+    }
+  } catch {
+    // Fallback to vector icon if file is not available
+  }
+  return undefined
+}
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
@@ -53,13 +70,15 @@ export async function GET(request: Request) {
     console.error('Print stamp operator role lookup failed:', profileError)
     return jsonError('Could not verify operator access.', 503)
   }
-  if (profile?.role !== 'operator') {
+  if (profile?.role !== 'operator' && profile?.role !== 'admin') {
     return jsonError('Operator access is required.', 403)
   }
 
   const { data: job, error: jobError } = await supabaseAdmin
     .from('print_jobs')
-    .select('token, customer_name, customer_phone, delivery_option, total_pages, paper_size, color_mode, copies, total_cost_poisha')
+    .select(
+      'token, customer_name, customer_phone, delivery_option, total_pages, paper_size, color_mode, print_side, upload_method, copies, total_cost_poisha, created_at, original_filename',
+    )
     .eq('id', id)
     .maybeSingle()
   if (jobError) {
@@ -69,102 +88,35 @@ export async function GET(request: Request) {
   if (!job) return jsonError('Print job not found.', 404)
 
   try {
-    const qrPng = await QRCode.toBuffer(job.token, { margin: 1, width: 80 })
-    const pdf = await PDFDocument.create()
-    const page = pdf.addPage([148.82, 210.47])
-    const qrImage = await pdf.embedPng(qrPng)
-    const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
-    const regular = await pdf.embedFont(StandardFonts.Helvetica)
-    const black = rgb(0.08, 0.1, 0.13)
-    const deliveryOption = String(job.delivery_option || 'None')
-    const deliveryLabel =
-      deliveryOption.length > 36 ? `${deliveryOption.slice(0, 33)}...` : deliveryOption
-
-    page.drawRectangle({
-      x: 0.5,
-      y: 0.5,
-      width: 147.82,
-      height: 209.47,
-      borderColor: rgb(0.55, 0.57, 0.6),
-      borderWidth: 0.5,
-    })
-    page.drawText('PrintKloud', {
-      x: 8,
-      y: 190,
-      size: 12,
-      font: bold,
-      color: black,
-    })
-    page.drawText(`#${String(job.token).replace(/^#/, '')}`, {
-      x: 8,
-      y: 173,
-      size: 9,
-      font: bold,
-      color: black,
-    })
-    page.drawText(`Name: ${job.customer_name || 'Customer'}`, {
-      x: 8,
-      y: 158,
-      size: 7.5,
-      font: regular,
-      color: black,
-      maxWidth: 132,
-    })
-    page.drawText(`Phone: ${job.customer_phone}`, {
-      x: 8,
-      y: 146,
-      size: 7.5,
-      font: regular,
-      color: black,
-      maxWidth: 132,
-    })
-    page.drawText(
-      `Specs: ${job.total_pages} pgs | ${job.paper_size} ${job.color_mode} | x${job.copies}`,
-      {
-        x: 8,
-        y: 133,
-        size: 7,
-        font: regular,
-        color: black,
-        maxWidth: 132,
-      },
-    )
-    page.drawText(`Delivery: ${deliveryLabel}`, {
-      x: 8,
-      y: 120,
-      size: 6.5,
-      font: regular,
-      color: black,
-      maxWidth: 132,
-    })
-    page.drawText(`Total: Tk. ${(Number(job.total_cost_poisha) / 100).toFixed(2)}`, {
-      x: 8,
-      y: 106,
-      size: 8,
-      font: bold,
-      color: black,
-      maxWidth: 132,
-    })
-    page.drawImage(qrImage, {
-      x: 95,
-      y: 24,
-      width: 45,
-      height: 45,
+    const logoBytes = await getProjectLogoBytes()
+    const pdfBytes = await createOfficialReceiptPdfBytes({
+      order_token: job.token,
+      customer_name: job.customer_name,
+      customer_phone: job.customer_phone,
+      upload_method: job.upload_method || 'DIRECT',
+      paper_size: job.paper_size,
+      print_side: job.print_side || 'SINGLE',
+      page_count: job.total_pages,
+      total_pages: job.total_pages,
+      copies: job.copies,
+      total_cost_poisha: job.total_cost_poisha,
+      created_at: job.created_at,
+      job_title: job.original_filename,
+      logo_bytes: logoBytes,
     })
 
-    const pdfBytes = await pdf.save()
     const filenameToken = String(job.token).replace(/[^A-Za-z0-9_-]/g, '_')
     return new NextResponse(pdfBytes, {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `inline; filename="Stamp-${filenameToken}.pdf"`,
+        'Content-Disposition': `inline; filename="Receipt-${filenameToken}.pdf"`,
       },
     })
   } catch (error) {
     console.error('Print stamp PDF generation failed:', error)
     return jsonError(
-      error instanceof Error ? error.message : 'Could not generate the print stamp.',
+      error instanceof Error ? error.message : 'Could not generate the print receipt.',
       500,
     )
   }

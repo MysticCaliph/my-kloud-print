@@ -21,9 +21,11 @@ import {
 import { Navbar } from '@/components/Navbar'
 import { ManualOrderModal } from '@/components/admin/manual-order-modal'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
+import { cn } from '@/lib/utils'
 
 type OrderStatus = 'PENDING' | 'PRINTED' | 'DISPATCHED' | 'DELIVERED' | 'CANCELLED'
-type PrintColor = 'B&W' | 'Full color'
+type PrintSide = 'SINGLE' | 'DUPLEX'
+type UploadMethod = 'DIRECT' | 'WHATSAPP' | 'TELEGRAM'
 type PaperSize = 'A4' | 'Legal'
 
 interface PrintOrder {
@@ -33,7 +35,8 @@ interface PrintOrder {
   deliveryOption: string | null
   pages: number
   paperSize: PaperSize
-  color: PrintColor
+  printSide: PrintSide
+  uploadMethod: UploadMethod
   copies: number
   total: number
   status: OrderStatus
@@ -204,9 +207,11 @@ export default function AdminPage() {
             deliveryOption: job.delivery_option,
             pages: job.total_pages,
             paperSize: job.paper_size === 'LEGAL' ? 'Legal' : job.paper_size,
-            color: job.color_mode === 'Full Color' || job.color_mode === 'color'
-              ? 'Full color'
-              : 'B&W',
+            printSide: (job.print_side?.toUpperCase() === 'DUPLEX' ? 'DUPLEX' : 'SINGLE') as PrintSide,
+            uploadMethod: (job.upload_method?.toUpperCase() || 'DIRECT') as UploadMethod,
+
+
+
             copies: job.copies,
             total: Number(job.total_cost_poisha) / 100,
             status: normalizeStatus(job.status),
@@ -537,6 +542,18 @@ export default function AdminPage() {
                         <span className="inline-flex rounded-md border border-white/[0.09] bg-[#0b111b] px-2.5 py-1.5 font-mono text-xs font-medium tracking-wide text-teal-200">
                           {order.token}
                         </span>
+                        <span
+                          className={cn(
+                            'ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide',
+                            order.uploadMethod === 'WHATSAPP'
+                              ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                              : order.uploadMethod === 'TELEGRAM'
+                                ? 'border border-sky-500/30 bg-sky-500/10 text-sky-300'
+                                : 'border border-teal-500/30 bg-teal-500/10 text-teal-300',
+                          )}
+                        >
+                          {order.uploadMethod}
+                        </span>
                         <p className="mt-1.5 text-[11px] text-slate-600">{formatPlacedAt(order.placedAt)}</p>
                       </td>
                       <td className="max-w-[250px] px-5 py-4 align-middle">
@@ -554,8 +571,8 @@ export default function AdminPage() {
                           {order.pages} pages
                         </div>
                         <div className="mt-1.5 text-xs text-slate-500">
-                          <span className={order.color === 'Full color' ? 'text-fuchsia-300' : 'text-slate-400'}>
-                            {order.paperSize} · {order.color}
+                          <span className="text-slate-400">
+                            {order.paperSize} · {order.printSide === 'DUPLEX' ? 'Duplex' : 'Single'} · B&W
                           </span>
                           <span className="mx-1.5 text-slate-700">·</span>
                           {order.copies} {order.copies === 1 ? 'copy' : 'copies'}

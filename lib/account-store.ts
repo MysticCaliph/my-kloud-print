@@ -16,7 +16,9 @@ export interface AccountPrintOrder {
   fileName: string
   pages: number
   paperSize: 'A4' | 'Legal'
-  color: 'B&W' | 'Full color'
+  color: 'B&W'
+  printSide?: 'Single' | 'Duplex' | 'SINGLE' | 'DUPLEX'
+  uploadMethod?: 'DIRECT' | 'WHATSAPP' | 'TELEGRAM' | string
   copies: number
   address: string
   total: number

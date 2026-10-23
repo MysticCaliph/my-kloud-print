@@ -15,10 +15,11 @@ import {
   Printer,
   Wallet,
 } from 'lucide-react'
-import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib'
 import { Navbar } from '@/components/Navbar'
 import { AccountDialog } from '@/components/dashboard/account-dialog'
 import { Button } from '@/components/ui/button'
+import { UserAvatar, MaleAvatarSvg, FemaleAvatarSvg } from '@/components/UserAvatar'
+import { cn } from '@/lib/utils'
 import type { AccountPrintOrder, WalletTransaction } from '@/lib/account-store'
 import { generateManualJobReceiptPdf } from '@/lib/pdf-stamper'
 import { formatBDT } from '@/lib/print'
@@ -49,82 +50,6 @@ function formatDate(value: string, short = false) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Date unavailable'
   return (short ? SHORT_DATE_FORMAT : DATE_FORMAT).format(date)
-}
-
-async function generateStampedCopy(order: AccountPrintOrder) {
-  const pdf = await PDFDocument.create()
-  const page = pdf.addPage([612, 792])
-  const regular = await pdf.embedFont(StandardFonts.Helvetica)
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
-
-  page.drawRectangle({ x: 0, y: 690, width: 612, height: 102, color: rgb(0.035, 0.055, 0.09) })
-  page.drawText('PRINTKLOUD', {
-    x: 48,
-    y: 738,
-    size: 12,
-    font: bold,
-    color: rgb(0.39, 0.89, 0.79),
-  })
-  page.drawText('STAMPED PRINT ORDER', {
-    x: 48,
-    y: 710,
-    size: 21,
-    font: bold,
-    color: rgb(1, 1, 1),
-  })
-
-  const details = [
-    ['Order token', order.token],
-    ['Submitted', formatDate(order.submittedAt)],
-    ['File name', order.fileName],
-    ['Document specifications', `${order.pages} pages · ${order.paperSize} · ${order.color} · ${order.copies} copies`],
-    ['Delivery address', order.address],
-    ['Total cost', `BDT ${order.total.toFixed(2)}`],
-    ['Order status', order.status],
-  ] as const
-  let y = 650
-  for (const [label, value] of details) {
-    page.drawText(label.toUpperCase(), {
-      x: 48,
-      y,
-      size: 8,
-      font: bold,
-      color: rgb(0.35, 0.4, 0.47),
-    })
-    page.drawText(value.slice(0, 76), {
-      x: 48,
-      y: y - 21,
-      size: 12,
-      font: regular,
-      color: rgb(0.08, 0.11, 0.16),
-    })
-    page.drawLine({
-      start: { x: 48, y: y - 33 },
-      end: { x: 564, y: y - 33 },
-      thickness: 0.6,
-      color: rgb(0.86, 0.88, 0.9),
-    })
-    y -= 68
-  }
-  page.drawText('PRINTKLOUD · CUSTOMER ORDER COPY', {
-    x: 138,
-    y: 260,
-    size: 14,
-    font: bold,
-    color: rgb(0.04, 0.56, 0.47),
-    rotate: degrees(-16),
-    opacity: 0.68,
-  })
-  page.drawText('Order summary copy. This does not contain the original uploaded document.', {
-    x: 48,
-    y: 42,
-    size: 8,
-    font: regular,
-    color: rgb(0.4, 0.44, 0.49),
-  })
-
-  const bytes = await pdf.save()
-  return new Blob([bytes as BlobPart], { type: 'application/pdf' })
 }
 
 function OrderStatus({ status }: { status: AccountPrintOrder['status'] }) {
@@ -171,6 +96,26 @@ export default function AccountPage() {
   const [notificationError, setNotificationError] = useState<string | null>(null)
   const [downloadError, setDownloadError] = useState<string | null>(null)
   const [downloadingToken, setDownloadingToken] = useState<string | null>(null)
+  const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false)
+
+  async function handleAvatarUpdate(type: 'male' | 'female') {
+    if (!account || account.avatarType === type || isUpdatingAvatar) return
+    setIsUpdatingAvatar(true)
+    try {
+      const supabase = createSupabaseBrowserClient()
+      const { error } = await supabase
+        .from('profiles')
+        .update({ avatar_type: type })
+        .eq('id', account.id)
+      if (error) throw error
+      await supabase.auth.updateUser({ data: { avatar_type: type } }).catch(() => {})
+      await refresh()
+    } catch (err) {
+      console.error('Failed to update avatar:', err)
+    } finally {
+      setIsUpdatingAvatar(false)
+    }
+  }
 
   useEffect(() => {
     if (!account) {
@@ -186,7 +131,7 @@ export default function AccountPage() {
       const { data, error } = await supabase
         .from('print_jobs')
         .select(
-          'token, created_at, total_pages, original_filename, paper_size, color_mode, copies, delivery_address, total_cost_poisha, status, file_storage_path',
+          'token, created_at, total_pages, original_filename, paper_size, color_mode, print_side, upload_method, copies, delivery_address, total_cost_poisha, status, file_storage_path',
         )
         .eq('user_id', account.id)
         .order('created_at', { ascending: false })
@@ -210,10 +155,13 @@ export default function AccountPage() {
             fileName: job.original_filename || 'Print job document',
             pages: job.total_pages,
             paperSize: job.paper_size === 'LEGAL' ? 'Legal' : job.paper_size,
-            color:
-              job.color_mode === 'Full Color' || job.color_mode === 'color'
-                ? 'Full color'
-                : 'B&W',
+            color: 'B&W',
+            printSide: job.print_side === 'DUPLEX' ? 'DUPLEX' : 'SINGLE',
+            uploadMethod: job.upload_method || 'DIRECT',
+
+
+
+
             copies: job.copies,
             address: job.delivery_address,
             total: job.total_cost_poisha / 100,
@@ -259,24 +207,24 @@ export default function AccountPage() {
     setDownloadingToken(order.token)
     setDownloadError(null)
     try {
-      let pdfBlob: Blob
-      if (order.fileStoragePath) {
-        pdfBlob = await generateStampedCopy(order)
-      } else {
-        pdfBlob = await generateManualJobReceiptPdf({
-          order_token: order.token,
-          job_title: order.fileName,
-          paper_size: order.paperSize,
-          print_type: order.color,
-          page_count: order.pages,
-          copies: order.copies,
-          total_price: order.total,
-          created_at: order.submittedAt,
-          customer_info: account
-            ? `${account.name}${account.phone ? ` - ${account.phone}` : ''}`
-            : undefined,
-        })
-      }
+      const pdfBlob = await generateManualJobReceiptPdf({
+        order_token: order.token,
+        customer_name: account?.name,
+        customer_phone: account?.phone,
+        upload_method: order.uploadMethod || 'DIRECT',
+        job_title: order.fileName,
+        paper_size: order.paperSize,
+        print_side: order.printSide || 'SINGLE',
+        print_type: order.color,
+        page_count: order.pages,
+        total_pages: order.pages,
+        copies: order.copies,
+        total_price: order.total,
+        created_at: order.submittedAt,
+        customer_info: account
+          ? `${account.name}${account.phone ? ` - ${account.phone}` : ''}`
+          : undefined,
+      })
       const url = URL.createObjectURL(pdfBlob)
       const anchor = document.createElement('a')
       anchor.href = url
@@ -312,12 +260,8 @@ export default function AccountPage() {
             <section className="grid gap-4 lg:grid-cols-[1fr_0.9fr]">
               <article className="rounded-2xl border border-white/[0.08] bg-[#101722] p-5 sm:p-7">
                 <div className="flex items-start gap-4">
-                  <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-teal-300/10 text-lg font-semibold text-teal-200">
-                    {account.name
-                      .split(/\s+/)
-                      .slice(0, 2)
-                      .map((part) => part[0]?.toUpperCase())
-                      .join('')}
+                  <div className="relative size-16 shrink-0 overflow-hidden rounded-2xl border border-teal-300/20 bg-teal-300/10">
+                    <UserAvatar type={account.avatarType} className="size-full" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
@@ -325,6 +269,42 @@ export default function AccountPage() {
                     </p>
                     <h2 className="mt-1 truncate text-xl font-semibold text-white">{account.name}</h2>
                     <p className="mt-0.5 truncate text-sm text-slate-400">{account.email}</p>
+
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className="text-xs text-slate-500">Avatar:</span>
+                      <button
+                        type="button"
+                        disabled={isUpdatingAvatar}
+                        onClick={() => void handleAvatarUpdate('male')}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors',
+                          account.avatarType === 'male'
+                            ? 'border-teal-400/40 bg-teal-400/10 text-teal-300'
+                            : 'border-white/10 bg-white/[0.04] text-slate-400 hover:text-white',
+                        )}
+                      >
+                        <div className="size-4 overflow-hidden rounded-sm">
+                          <MaleAvatarSvg className="size-full" />
+                        </div>
+                        Male
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isUpdatingAvatar}
+                        onClick={() => void handleAvatarUpdate('female')}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-colors',
+                          account.avatarType === 'female'
+                            ? 'border-pink-400/40 bg-pink-400/10 text-pink-300'
+                            : 'border-white/10 bg-white/[0.04] text-slate-400 hover:text-white',
+                        )}
+                      >
+                        <div className="size-4 overflow-hidden rounded-sm">
+                          <FemaleAvatarSvg className="size-full" />
+                        </div>
+                        Female
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div className="mt-6 grid gap-4 border-t border-white/[0.07] pt-5 sm:grid-cols-2">
@@ -461,7 +441,7 @@ export default function AccountPage() {
                                 <span className="truncate">{order.fileName}</span>
                               </div>
                               <div className="mt-3 grid gap-x-6 gap-y-2 text-xs text-slate-400 sm:grid-cols-2 xl:grid-cols-3">
-                                <p>{order.pages} pages · {order.paperSize} · {order.color} · {order.copies} {order.copies === 1 ? 'copy' : 'copies'}</p>
+                                <p>{order.pages} pages · {order.paperSize} · {order.printSide === 'DUPLEX' ? 'Duplex' : 'Single'} · B&W · {order.copies} {order.copies === 1 ? 'copy' : 'copies'}</p>
                                 <p className="flex items-start gap-1.5">
                                   <MapPin className="mt-0.5 size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
                                   {order.address}

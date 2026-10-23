@@ -21,7 +21,7 @@ interface UploadZoneProps {
   onSelectedPagesChange: (pages: number[]) => void
 }
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024
+export const MAX_DIRECT_FILE_SIZE = 50 * 1024 * 1024 // 52,428,800 bytes
 
 async function countPdfPages(file: File) {
   const { PDFDocument } = await import('pdf-lib')
@@ -51,8 +51,10 @@ export function UploadZone({
       setError('Only PDF files are supported.')
       return
     }
-    if (selected.size > MAX_FILE_SIZE) {
-      setError('File is larger than 50 MB.')
+    if (selected.size > MAX_DIRECT_FILE_SIZE) {
+      setError(
+        'File exceeds the 50 MB direct upload limit. Please use the WhatsApp or Telegram upload option below to send files larger than 50 MB.',
+      )
       return
     }
 
@@ -82,9 +84,9 @@ export function UploadZone({
     >
       <div className="mb-4 flex items-center justify-between">
         <h2 id="upload-heading" className="text-base font-semibold">
-          1. Upload document
+          Upload PDF Document
         </h2>
-        <span className="text-xs text-muted-foreground">PDF up to 50 MB</span>
+        <span className="text-xs text-muted-foreground font-mono">Max 50 MB</span>
       </div>
 
       {!file ? (
@@ -109,7 +111,7 @@ export function UploadZone({
           {isProcessing ? (
             <>
               <Loader2 className="size-10 animate-spin text-primary" aria-hidden="true" />
-              <p className="text-sm text-muted-foreground">Reading pages…</p>
+              <p className="text-sm text-muted-foreground">Reading PDF pages…</p>
             </>
           ) : (
             <>
@@ -117,10 +119,8 @@ export function UploadZone({
                 <UploadCloud className="size-6" aria-hidden="true" />
               </span>
               <div className="flex flex-col gap-1">
-                <p className="text-sm font-medium">
-                  Drag & drop your PDF here
-                </p>
-                <p className="text-xs text-muted-foreground">or click to browse your files</p>
+                <p className="text-sm font-medium">Drag &amp; drop your PDF here</p>
+                <p className="text-xs text-muted-foreground">or click to browse your files (up to 50 MB)</p>
               </div>
               <Button
                 variant="outline"
@@ -128,7 +128,7 @@ export function UploadZone({
                 onClick={() => inputRef.current?.click()}
                 className="mt-1"
               >
-                Choose file
+                Choose PDF file
               </Button>
             </>
           )}

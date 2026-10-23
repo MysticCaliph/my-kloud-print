@@ -1,40 +1,45 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Check, ChevronDown, Loader2, Plus } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import {
+  AlertCircle,
+  Check,
+  ChevronDown,
+  Loader2,
+  Plus,
+  Search,
+  User,
+  Wallet,
+  X,
+} from 'lucide-react'
 import { createAdminManualOrder } from '@/lib/admin-orders'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
   calculateManualOrderCostPoisha,
-  MANUAL_PRINT_RATES_POISHA,
   type ManualPaperSize,
+  type ManualPrintSide,
 } from '@/lib/manual-order'
-import { formatBDT, type PrintColor } from '@/lib/print'
+import { formatBDT } from '@/lib/print'
 
 interface ManualOrderUser {
   id: string
   name: string
-  phone: string
   email: string
-  wallets:
-    | { balance_poisha: number | null }[]
-    | { balance_poisha: number | null }
-    | null
+  phone: string
+  wallets?:
+    | {
+        balance_poisha: number | string
+      }
+    | Array<{
+        balance_poisha: number | string
+      }>
 }
 
 const DELIVERY_OPTIONS = [
   'Get the printed copy next class (8:00 AM - 9:40 AM)',
   'Receive from DR MA Rashid Hall (8:00 PM - 8:30 PM)',
   'Pick up from Laboratory School or Mohona Shop (Anytime)',
-  'Skip / Flexible',
-] as const
+  'Direct Collection from Shop Counter',
+]
 
 function getWalletBalancePoisha(user: ManualOrderUser | undefined) {
   const wallet = user
@@ -42,7 +47,11 @@ function getWalletBalancePoisha(user: ManualOrderUser | undefined) {
       ? user.wallets[0]
       : user.wallets
     : null
-  return wallet?.balance_poisha ?? null
+  if (!wallet || wallet.balance_poisha === undefined || wallet.balance_poisha === null) {
+    return null
+  }
+  const parsed = Number(wallet.balance_poisha)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 export function ManualOrderModal({
@@ -64,7 +73,7 @@ export function ManualOrderModal({
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false)
   const [activeCustomerIndex, setActiveCustomerIndex] = useState(0)
   const [paperSize, setPaperSize] = useState<ManualPaperSize>('A4')
-  const [colorMode, setColorMode] = useState<PrintColor>('bw')
+  const [printSide, setPrintSide] = useState<ManualPrintSide>('SINGLE')
   const [totalPages, setTotalPages] = useState('1')
   const [copies, setCopies] = useState('1')
   const [deliveryOption, setDeliveryOption] = useState<string>('')
@@ -110,7 +119,7 @@ export function ManualOrderModal({
     return term
       ? users.filter((user) =>
           [user.name, user.email, user.phone].some((value) =>
-            value.toLowerCase().includes(term),
+            value?.toLowerCase().includes(term),
           ),
         )
       : users
@@ -123,7 +132,7 @@ export function ManualOrderModal({
   const copyCountValid = Number.isSafeInteger(copyCount) && copyCount >= 1
   const totalCostPoisha =
     pageCountValid && copyCountValid
-      ? calculateManualOrderCostPoisha(paperSize, colorMode, pageCount, copyCount)
+      ? calculateManualOrderCostPoisha(paperSize, printSide, pageCount, copyCount)
       : 0
   const totalCostValid = Number.isSafeInteger(totalCostPoisha) && totalCostPoisha > 0
   const walletBalancePoisha = getWalletBalancePoisha(selectedUser)
@@ -134,7 +143,7 @@ export function ManualOrderModal({
     setIsCustomerDropdownOpen(false)
     setActiveCustomerIndex(0)
     setPaperSize('A4')
-    setColorMode('bw')
+    setPrintSide('SINGLE')
     setTotalPages('1')
     setCopies('1')
     setDeliveryOption('')
@@ -202,7 +211,7 @@ export function ManualOrderModal({
         customerName: selectedUser.name,
         customerPhone: selectedUser.phone,
         paperSize,
-        colorMode,
+        printSide,
         totalPages: pageCount,
         copies: copyCount,
         deliveryOption,
@@ -220,160 +229,143 @@ export function ManualOrderModal({
     }
   }
 
+  if (!open) return null
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen && !isSubmitting) resetForm()
-        onOpenChange(nextOpen)
-      }}
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="manual-order-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
     >
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Create manual print job</DialogTitle>
-          <DialogDescription>
-            Create a remote print job for a customer without uploading a PDF.
-          </DialogDescription>
-        </DialogHeader>
+      <div
+        className="fixed inset-0 bg-black/75 backdrop-blur-sm"
+        aria-hidden="true"
+        onClick={() => onOpenChange(false)}
+      />
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          {userLoadError && (
-            <p role="alert" className="rounded-lg border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-sm text-rose-300">
-              {userLoadError}
+      <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-2xl border border-white/[0.08] bg-[#101722] p-6 shadow-2xl shadow-black/40">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="manual-order-title" className="text-lg font-semibold text-white">
+              Create manual print job
+            </h2>
+            <p className="mt-1 text-xs text-slate-400">
+              Create a physical walk-in job and optionally charge the user wallet.
             </p>
-          )}
-          {submitError && (
-            <p role="alert" className="rounded-lg border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-sm text-rose-300">
-              {submitError}
-            </p>
-          )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            aria-label="Close dialog"
+            className="rounded-lg p-1 text-slate-400 hover:bg-white/[0.06] hover:text-white"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
 
-          <div className="flex flex-col gap-1.5 text-sm">
-            <label htmlFor="manual-order-customer" className="font-medium">
-              Find customer
+        {submitError && (
+          <div
+            role="alert"
+            className="mt-4 flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300"
+          >
+            <AlertCircle className="size-4 shrink-0" />
+            <span>{submitError}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          <div className="relative">
+            <label
+              htmlFor="manual-order-customer-search"
+              className="mb-1.5 block text-sm font-medium text-slate-200"
+            >
+              Customer account
             </label>
             <div className="relative">
               <input
-                id="manual-order-customer"
+                id="manual-order-customer-search"
                 type="text"
-                role="combobox"
-                aria-autocomplete="list"
-                aria-expanded={isCustomerDropdownOpen}
-                aria-controls="manual-order-customer-listbox"
-                aria-activedescendant={
-                  isCustomerDropdownOpen && filteredUsers[activeCustomerIndex]
-                    ? `manual-order-customer-${filteredUsers[activeCustomerIndex].id}`
-                    : undefined
-                }
-                aria-required="true"
                 autoComplete="off"
+                placeholder={
+                  isLoadingUsers ? 'Loading customers…' : 'Search name, phone, or email…'
+                }
                 value={
                   isCustomerDropdownOpen
                     ? userSearch
                     : selectedUser
-                      ? `${selectedUser.name} · ${selectedUser.phone || selectedUser.email || selectedUser.id}`
+                      ? `${selectedUser.name} · ${selectedUser.phone || selectedUser.email}`
                       : userSearch
                 }
                 onFocus={() => {
+                  setUserSearch('')
+                  setIsCustomerDropdownOpen(true)
+                  setActiveCustomerIndex(0)
+                }}
+                onClick={() => {
                   if (!isCustomerDropdownOpen) {
                     setUserSearch('')
-                    setActiveCustomerIndex(0)
                     setIsCustomerDropdownOpen(true)
+                    setActiveCustomerIndex(0)
                   }
-                }}
-                onBlur={() => {
-                  setIsCustomerDropdownOpen(false)
-                  setUserSearch('')
                 }}
                 onChange={(event) => {
                   setUserSearch(event.target.value)
                   setSelectedUserId('')
-                  setActiveCustomerIndex(0)
                   setIsCustomerDropdownOpen(true)
+                  setActiveCustomerIndex(0)
                 }}
                 onKeyDown={handleCustomerKeyDown}
-                placeholder={
-                  isLoadingUsers
-                    ? 'Loading customers…'
-                    : 'Search name, phone, or email'
-                }
                 disabled={isLoadingUsers || Boolean(userLoadError)}
-                className="h-10 w-full rounded-lg border border-white/[0.12] bg-[#0b111b] px-3 pr-10 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-teal-300/50 disabled:opacity-50"
+                className="h-10 w-full rounded-lg border border-white/[0.12] bg-[#0b111b] pl-9 pr-8 text-sm text-slate-100 placeholder:text-slate-600 outline-none focus:border-teal-300/50"
               />
-              <ChevronDown
-                className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-500"
+              <Search
+                className="pointer-events-none absolute left-3 top-3 size-4 text-slate-500"
                 aria-hidden="true"
               />
-              {isCustomerDropdownOpen && (
-                <ul
-                  id="manual-order-customer-listbox"
-                  role="listbox"
-                  aria-label="Customers"
-                  className="absolute z-30 mt-1 max-h-52 w-full overflow-y-auto rounded-lg border border-white/[0.12] bg-[#101722] p-1 shadow-xl"
-                >
-                  {filteredUsers.length > 0 ? (
-                    filteredUsers.map((user, index) => {
-                      const isSelected = user.id === selectedUserId
-                      const isActive = index === activeCustomerIndex
-                      return (
-                        <li
-                          id={`manual-order-customer-${user.id}`}
-                          key={user.id}
-                          role="option"
-                          aria-selected={isSelected}
-                          onPointerDown={(event) => event.preventDefault()}
-                          onMouseEnter={() => setActiveCustomerIndex(index)}
-                          onClick={() => selectCustomer(user)}
-                          className={`flex cursor-pointer items-center justify-between gap-3 rounded-md px-3 py-2 ${
-                            isActive
-                              ? 'bg-teal-300/10 text-teal-100'
-                              : 'text-slate-200 hover:bg-white/[0.05]'
-                          }`}
-                        >
-                          <span className="min-w-0">
-                            <span className="block truncate font-medium">{user.name}</span>
-                            <span className="block truncate text-xs text-slate-500">
-                              {user.phone || user.email || user.id}
-                            </span>
-                          </span>
-                          {isSelected && (
-                            <Check className="size-4 shrink-0 text-teal-300" aria-hidden="true" />
-                          )}
-                        </li>
-                      )
-                    })
-                  ) : (
-                    <li role="status" className="px-3 py-2 text-xs text-slate-500">
-                      No customers match your search.
-                    </li>
-                  )}
-                </ul>
-              )}
+              <ChevronDown
+                className="pointer-events-none absolute right-3 top-3 size-4 text-slate-500"
+                aria-hidden="true"
+              />
             </div>
+
+            {isCustomerDropdownOpen && (
+              <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-20 max-h-56 overflow-y-auto rounded-lg border border-white/[0.12] bg-[#0b111b] p-1 shadow-xl">
+                {filteredUsers.length > 0 ? (
+                  filteredUsers.map((user, index) => {
+                    const isSelected = user.id === selectedUserId
+                    const isActive = index === activeCustomerIndex
+                    return (
+                      <button
+                        type="button"
+                        key={user.id}
+                        onClick={() => selectCustomer(user)}
+                        className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs transition-colors ${
+                          isActive
+                            ? 'bg-teal-300/[0.12] text-teal-100'
+                            : isSelected
+                              ? 'bg-white/[0.06] text-white'
+                              : 'text-slate-300 hover:bg-white/[0.04]'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">{user.name}</span>
+                          <span className="block truncate text-[11px] text-slate-500">
+                            {user.phone || user.email || user.id}
+                          </span>
+                        </div>
+                        {isSelected && <Check className="size-4 shrink-0 text-teal-300" />}
+                      </button>
+                    )
+                  })
+                ) : (
+                  <p className="px-3 py-2 text-xs text-slate-500">No matching customers.</p>
+                )}
+              </div>
+            )}
           </div>
 
-          {selectedUser && (
-            <div className="rounded-lg border border-white/[0.08] bg-[#0b111b] px-3 py-2 text-xs text-slate-400">
-              <p className="font-medium text-slate-200">{selectedUser.name}</p>
-              <p>{selectedUser.phone || 'No phone number on profile'}</p>
-              {walletBalancePoisha !== null && (
-                <p>Wallet: {formatBDT(walletBalancePoisha / 100)}</p>
-              )}
-            </div>
-          )}
-
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">Job title (optional)</span>
-            <input
-              maxLength={200}
-              value={jobTitle}
-              onChange={(event) => setJobTitle(event.target.value)}
-              placeholder="Manual Admin Print Job"
-              className="h-10 rounded-lg border border-white/[0.12] bg-[#0b111b] px-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-teal-300/50"
-            />
-          </label>
-
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1.5 text-sm">
               <span className="font-medium">Paper size</span>
               <select
@@ -383,23 +375,27 @@ export function ManualOrderModal({
                 }
                 className="h-10 rounded-lg border border-white/[0.12] bg-[#0b111b] px-3 text-sm text-slate-100 outline-none focus:border-teal-300/50"
               >
-                <option value="A4">A4</option>
-                <option value="LEGAL">Legal</option>
+                <option value="A4">A4 (৳1.75 Single / ৳3.00 Duplex)</option>
+                <option value="LEGAL">Legal (৳2.25 Single / ৳4.00 Duplex)</option>
               </select>
             </label>
+
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium">Print color</span>
+              <span className="font-medium">Print side</span>
               <select
-                value={colorMode}
+                value={printSide}
                 onChange={(event) =>
-                  setColorMode(event.target.value === 'color' ? 'color' : 'bw')
+                  setPrintSide(event.target.value === 'DUPLEX' ? 'DUPLEX' : 'SINGLE')
                 }
                 className="h-10 rounded-lg border border-white/[0.12] bg-[#0b111b] px-3 text-sm text-slate-100 outline-none focus:border-teal-300/50"
               >
-                <option value="bw">Black &amp; White</option>
-                <option value="color">Color</option>
+                <option value="SINGLE">Single-sided</option>
+                <option value="DUPLEX">Duplex (Both sides)</option>
               </select>
             </label>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1.5 text-sm">
               <span className="font-medium">Page count</span>
               <input
@@ -429,17 +425,28 @@ export function ManualOrderModal({
           </div>
 
           <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">Delivery option</span>
+            <span className="font-medium">Job title / reference (optional)</span>
+            <input
+              type="text"
+              placeholder="e.g. Lab Report 1"
+              value={jobTitle}
+              onChange={(event) => setJobTitle(event.target.value)}
+              className="h-10 rounded-lg border border-white/[0.12] bg-[#0b111b] px-3 text-sm text-slate-100 placeholder:text-slate-600 outline-none focus:border-teal-300/50"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium">Delivery arrangement</span>
             <select
-              required
               value={deliveryOption}
               onChange={(event) => setDeliveryOption(event.target.value)}
+              required
               className="h-10 rounded-lg border border-white/[0.12] bg-[#0b111b] px-3 text-sm text-slate-100 outline-none focus:border-teal-300/50"
             >
-              <option value="">Select delivery option</option>
-              {DELIVERY_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
+              <option value="">Select an arrangement…</option>
+              {DELIVERY_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
                 </option>
               ))}
             </select>
@@ -450,7 +457,7 @@ export function ManualOrderModal({
               <p className="text-sm font-medium text-slate-200">Order total</p>
               <p className="text-xs text-slate-500">
                 {pageCountValid && copyCountValid
-                  ? `${pageCount} pages × ${copyCount} ${copyCount === 1 ? 'copy' : 'copies'} × ${formatBDT(MANUAL_PRINT_RATES_POISHA[paperSize][colorMode] / 100)}`
+                  ? `${pageCount} pages · ${printSide === 'DUPLEX' ? 'Duplex' : 'Single'} · ${copyCount} ${copyCount === 1 ? 'copy' : 'copies'}`
                   : 'Enter a valid page and copy count'}
               </p>
             </div>
@@ -469,41 +476,31 @@ export function ManualOrderModal({
             <span>Deduct cost from user wallet balance</span>
           </label>
 
-          <div className="flex justify-end gap-2 border-t border-white/[0.08] pt-4">
-            <Button
+          <div className="flex justify-end gap-3 pt-2">
+            <button
               type="button"
-              variant="outline"
-              disabled={isSubmitting}
-              onClick={() => {
-                resetForm()
-                onOpenChange(false)
-              }}
+              onClick={() => onOpenChange(false)}
+              className="h-10 rounded-lg px-4 text-sm font-medium text-slate-400 hover:text-white"
             >
               Cancel
-            </Button>
-            <Button
+            </button>
+            <button
               type="submit"
-              disabled={
-                isSubmitting ||
-                isLoadingUsers ||
-                !selectedUser ||
-                !pageCountValid ||
-                !copyCountValid ||
-                !totalCostValid ||
-                !deliveryOption
-              }
-              className="gap-2"
+              disabled={isSubmitting || !selectedUser || !pageCountValid || !copyCountValid}
+              className="inline-flex h-10 items-center gap-2 rounded-lg bg-teal-300 px-5 text-sm font-semibold text-slate-950 transition-colors hover:bg-teal-200 disabled:opacity-50"
             >
               {isSubmitting ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Creating…
+                </>
               ) : (
-                <Plus className="size-4" aria-hidden="true" />
+                'Create Job'
               )}
-              Create print job
-            </Button>
+            </button>
           </div>
         </form>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   )
 }

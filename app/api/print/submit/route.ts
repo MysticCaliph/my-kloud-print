@@ -9,11 +9,9 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 52,428,800 bytes
 const MAX_PAGES = 2000
 const MAX_COPIES = 99
-
-type PrintColorMode = 'bw' | 'color'
 
 interface TelegramSendMediaGroupResponse {
   ok?: boolean
@@ -52,8 +50,9 @@ function makeTelegramCaption({
   deliveryOption,
   selectedPageCount,
   pageRange,
-  colorMode,
   paperSize,
+  printSide,
+  uploadMethod,
   copies,
   totalCostBdt,
   deliveryNotes,
@@ -64,21 +63,29 @@ function makeTelegramCaption({
   deliveryOption: string
   selectedPageCount: number
   pageRange: string
-  colorMode: PrintColorMode
-  paperSize: PaperSize
+  paperSize: string
+  printSide: string
+  uploadMethod: string
   copies: number
   totalCostBdt: string
   deliveryNotes: string
 }) {
-  return [
-    `🖨️ *NEW PRINT ORDER* (#${escapeMarkdown(tokenCode)})`,
-    `👤 *Customer Name:* ${escapeMarkdown(customerName)}`,
-    `📱 *Phone:* ${escapeMarkdown(customerPhone)}`,
-    `📍 *Delivery Preference:* ${escapeMarkdown(deliveryOption)}`,
-    `📄 *Specs:* ${selectedPageCount} Pages (Range:${escapeMarkdown(pageRange)}) | ${paperSize} ${colorMode.toUpperCase()} | x${copies}`,
-    `💵 *Paid Total:* ৳${escapeMarkdown(totalCostBdt)}`,
-    `📝 *Notes:* ${escapeMarkdown(deliveryNotes || 'None')}`,
-  ].join('\n')
+  const deliveryHeader =
+    deliveryOption === 'Not specified (Customer skipped)'
+      ? 'Customer skipped handoff arrangement'
+      : deliveryOption
+  const lines = [
+    `*Order #${escapeMarkdown(tokenCode)}* · *PRINT ORDER*`,
+    `Customer: ${escapeMarkdown(customerName)} (${escapeMarkdown(customerPhone)})`,
+    `Method: ${escapeMarkdown(uploadMethod)}`,
+    `Pages: ${selectedPageCount} (${escapeMarkdown(pageRange)})`,
+    `Specs: ${escapeMarkdown(paperSize)} · ${escapeMarkdown(printSide)} · B&W`,
+    `Copies: ${copies}`,
+    `Delivery: ${escapeMarkdown(deliveryHeader)}`,
+    `Total: Tk. ${totalCostBdt}`,
+  ]
+  if (deliveryNotes) lines.push(`Notes: ${escapeMarkdown(deliveryNotes)}`)
+  return lines.join('\n')
 }
 
 async function createStampPdf({
@@ -87,8 +94,9 @@ async function createStampPdf({
   customerPhone,
   selectedPageCount,
   pageRange,
-  colorMode,
   paperSize,
+  printSide,
+  uploadMethod,
   copies,
   deliveryOption,
   totalCostBdt,
@@ -98,23 +106,22 @@ async function createStampPdf({
   customerPhone: string
   selectedPageCount: number
   pageRange: string
-  colorMode: PrintColorMode
-  paperSize: PaperSize
+  paperSize: string
+  printSide: string
+  uploadMethod: string
   copies: number
   deliveryOption: string
   totalCostBdt: number
 }) {
-  const qrPngBuffer = await QRCode.toBuffer(tokenCode, { margin: 1, width: 80 })
-  const stampPdfDoc = await PDFDocument.create()
-  const page = stampPdfDoc.addPage([148.82, 210.47])
-  const qrImage = await stampPdfDoc.embedPng(qrPngBuffer)
-  const fontBold = await stampPdfDoc.embedFont(StandardFonts.HelveticaBold)
-  const fontRegular = await stampPdfDoc.embedFont(StandardFonts.Helvetica)
-  const ink = rgb(0.08, 0.1, 0.13)
-  const printable = (value: string, maxLength: number) =>
-    value.replace(/[^\x20-\x7E]/g, '?').slice(0, maxLength)
-  const shortDelivery =
-    deliveryOption.length > 32 ? `${deliveryOption.slice(0, 29)}...` : deliveryOption
+  const qrPng = await QRCode.toBuffer(tokenCode, { margin: 1, width: 80 })
+  const pdf = await PDFDocument.create()
+  const page = pdf.addPage([148.82, 210.47])
+  const qrImage = await pdf.embedPng(qrPng)
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const regular = await pdf.embedFont(StandardFonts.Helvetica)
+  const black = rgb(0.08, 0.1, 0.13)
+  const deliveryLabel =
+    deliveryOption.length > 36 ? `${deliveryOption.slice(0, 33)}...` : deliveryOption
 
   page.drawRectangle({
     x: 0.5,
@@ -126,70 +133,77 @@ async function createStampPdf({
   })
   page.drawText('PrintKloud', {
     x: 8,
-    y: 192,
-    size: 11,
-    font: fontBold,
-    color: ink,
+    y: 190,
+    size: 12,
+    font: bold,
+    color: black,
   })
   page.drawText(`#${tokenCode}`, {
     x: 8,
-    y: 177,
-    size: 8,
-    font: fontBold,
-    color: ink,
+    y: 173,
+    size: 9,
+    font: bold,
+    color: black,
+  })
+  page.drawText(`Name: ${customerName}`, {
+    x: 8,
+    y: 158,
+    size: 7.5,
+    font: regular,
+    color: black,
     maxWidth: 132,
   })
-  page.drawText(`Name: ${printable(customerName || 'Customer', 32)}`, {
+  page.drawText(`Phone: ${customerPhone}`, {
     x: 8,
-    y: 163,
-    size: 6.5,
-    font: fontRegular,
-    color: ink,
-    maxWidth: 132,
-  })
-  page.drawText(`Phone: ${printable(customerPhone, 32)}`, {
-    x: 8,
-    y: 151,
-    size: 6.5,
-    font: fontRegular,
-    color: ink,
+    y: 146,
+    size: 7.5,
+    font: regular,
+    color: black,
     maxWidth: 132,
   })
   page.drawText(
-    `Specs: ${selectedPageCount}pg (${printable(pageRange, 24)}) ${paperSize} ${colorMode.toUpperCase()} x${copies}`,
+    `Specs: ${selectedPageCount} pgs (${pageRange}) | ${paperSize} ${printSide} B&W | x${copies}`,
     {
       x: 8,
-      y: 138,
-      size: 5.5,
-      font: fontRegular,
-      color: ink,
+      y: 133,
+      size: 6.5,
+      font: regular,
+      color: black,
       maxWidth: 132,
     },
   )
-  page.drawText(`Delivery: ${printable(shortDelivery, 36)}`, {
+  page.drawText(`Method: ${uploadMethod}`, {
     x: 8,
-    y: 125,
-    size: 5.5,
-    font: fontRegular,
-    color: ink,
+    y: 121,
+    size: 6.5,
+    font: bold,
+    color: black,
+    maxWidth: 132,
+  })
+  page.drawText(`Delivery: ${deliveryLabel}`, {
+    x: 8,
+    y: 110,
+    size: 6.5,
+    font: regular,
+    color: black,
     maxWidth: 132,
   })
   page.drawText(`Total: Tk. ${totalCostBdt.toFixed(2)}`, {
     x: 8,
-    y: 109,
-    size: 7,
-    font: fontBold,
-    color: ink,
+    y: 97,
+    size: 8,
+    font: bold,
+    color: black,
     maxWidth: 132,
   })
   page.drawImage(qrImage, {
-    x: 96,
+    x: 95,
     y: 20,
-    width: 44,
-    height: 44,
+    width: 45,
+    height: 45,
   })
 
-  return Buffer.from(await stampPdfDoc.save())
+  return pdf.save()
 }
 
 async function submitMediaGroupToTelegram({
@@ -209,19 +223,9 @@ async function submitMediaGroupToTelegram({
   botToken: string
   chatId: string
 }) {
-  const form = new FormData()
-  form.set('chat_id', chatId)
-  form.set(
-    'stamp',
-    new Blob([stampPdfBuffer as BlobPart], { type: 'application/pdf' }),
-    `Stamp-${tokenCode}.pdf`,
-  )
-  form.set(
-    'original',
-    new Blob([originalPdfBuffer as BlobPart], { type: 'application/pdf' }),
-    originalFilename,
-  )
-  form.set(
+  const telegramFormData = new FormData()
+  telegramFormData.append('chat_id', chatId)
+  telegramFormData.append(
     'media',
     JSON.stringify([
       {
@@ -236,38 +240,41 @@ async function submitMediaGroupToTelegram({
       },
     ]),
   )
+  telegramFormData.append(
+    'stamp',
+    new Blob([stampPdfBuffer as BlobPart], { type: 'application/pdf' }),
+    `Stamp-${tokenCode}.pdf`,
+  )
+  telegramFormData.append(
+    'original',
+    new Blob([originalPdfBuffer as BlobPart], { type: 'application/pdf' }),
+    originalFilename,
+  )
 
-  const response = await fetch(
+  const telegramResponse = await fetch(
     `https://api.telegram.org/bot${botToken}/sendMediaGroup`,
     {
       method: 'POST',
-      body: form,
-      signal: AbortSignal.timeout(30_000),
+      body: telegramFormData,
     },
   )
-
-  let result: TelegramSendMediaGroupResponse
-  try {
-    result = (await response.json()) as TelegramSendMediaGroupResponse
-  } catch {
-    throw new Error(`Telegram returned an invalid response (HTTP ${response.status}).`)
+  const result = (await telegramResponse.json()) as TelegramSendMediaGroupResponse
+  if (!telegramResponse.ok || !result.ok) {
+    const detail = result.description ? ` - ${result.description}` : ''
+    throw new Error(`Telegram delivery failed${detail}`)
   }
-
-  const originalFileId = result.result?.[1]?.document?.file_id
-  if (!response.ok || !result.ok || !originalFileId) {
-    throw new Error(result.description ?? `Telegram media group upload failed (HTTP ${response.status}).`)
-  }
-
-  return originalFileId
+  const fileId = result.result?.[1]?.document?.file_id
+  if (!fileId) throw new Error('Telegram response did not return an uploaded document ID.')
+  return fileId
 }
 
 export async function POST(request: Request) {
-  let supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>
+  let supabase
   try {
     supabase = await createSupabaseServerClient()
   } catch (error) {
-    console.error('Print submission configuration error:', error)
-    return jsonError('Print submission is not configured on the server.', 503)
+    console.error('Print submission authentication configuration error:', error)
+    return jsonError('Authentication is not configured on the server.', 503)
   }
 
   let user: User
@@ -286,9 +293,6 @@ export async function POST(request: Request) {
 
   const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN
   const telegramChatId = process.env.TELEGRAM_CHAT_ID
-  if (!telegramBotToken || !telegramChatId) {
-    return jsonError('Telegram is not configured on the server.', 503)
-  }
 
   let supabaseAdmin: ReturnType<typeof createSupabaseAdminClient>
   try {
@@ -322,87 +326,40 @@ export async function POST(request: Request) {
   const deliveryOptionValue = form.get('deliveryOption')
   const deliveryNotesValue = form.get('deliveryNotes')
   const pageRangeValue = form.get('pageRange') ?? form.get('selectedPageRange')
-  const colorValue = form.get('colorMode')
   const paperSizeValue = form.get('paperSize')
   const selectedPagesValue = form.get('selectedPages')
+  const uploadMethodRaw = (form.get('uploadMethod') as string) || 'DIRECT'
+  const uploadMethod: 'DIRECT' | 'WHATSAPP' | 'TELEGRAM' =
+    ['WHATSAPP', 'TELEGRAM'].includes(uploadMethodRaw.toUpperCase())
+      ? (uploadMethodRaw.toUpperCase() as 'WHATSAPP' | 'TELEGRAM')
+      : 'DIRECT'
+  const printSideRaw = (form.get('printSide') as string) || 'SINGLE'
+  const printSide: 'SINGLE' | 'DUPLEX' =
+    printSideRaw.toUpperCase() === 'DUPLEX' ? 'DUPLEX' : 'SINGLE'
 
-  if (!(fileValue instanceof File)) {
-    return jsonError('A PDF file is required.', 400)
-  }
   if (typeof submittedUserId !== 'string' || submittedUserId !== user.id) {
     return jsonError('The submitted user does not match the signed-in account.', 403)
   }
-  if (fileValue.size === 0 || fileValue.size > MAX_FILE_SIZE) {
-    return jsonError('The PDF must be between 1 byte and 50 MB.', 400)
-  }
-  if (
-    !fileValue.name.toLowerCase().endsWith('.pdf') &&
-    fileValue.type !== 'application/pdf'
-  ) {
-    return jsonError('Only PDF files are accepted.', 400)
-  }
-  const originalFilename =
-    fileValue.name.replace(/[\\/\r\n"]/g, '_').trim() || 'original.pdf'
   if (typeof phoneValue !== 'string' || phoneValue.trim().length < 7 || phoneValue.length > 40) {
     return jsonError('Enter a valid customer phone number.', 400)
-  }
-  if (
-    deliveryOptionValue !== null &&
-    (typeof deliveryOptionValue !== 'string' || deliveryOptionValue.length > 200)
-  ) {
-    return jsonError('Delivery preference must be 200 characters or fewer.', 400)
-  }
-  const finalDeliveryOption =
-    typeof deliveryOptionValue === 'string' && deliveryOptionValue.trim()
-      ? deliveryOptionValue.trim()
-      : 'Not specified (Customer skipped)'
-  if (
-    deliveryNotesValue !== null &&
-    (typeof deliveryNotesValue !== 'string' || deliveryNotesValue.length > 500)
-  ) {
-    return jsonError('Delivery notes must be 500 characters or fewer.', 400)
-  }
-  const deliveryNotes =
-    typeof deliveryNotesValue === 'string' ? deliveryNotesValue.trim() : ''
-  if (
-    pageRangeValue !== null &&
-    (typeof pageRangeValue !== 'string' || pageRangeValue.length > 200)
-  ) {
-    return jsonError('Page range must be 200 characters or fewer.', 400)
-  }
-  const finalPageRange =
-    typeof pageRangeValue === 'string' && pageRangeValue.trim()
-      ? pageRangeValue.trim()
-      : 'All'
-  if (colorValue !== 'bw' && colorValue !== 'color') {
-    return jsonError('Color mode must be "bw" or "color".', 400)
   }
   if (paperSizeValue !== 'A4' && paperSizeValue !== 'Legal') {
     return jsonError('Paper size must be "A4" or "Legal".', 400)
   }
 
+  const deliveryOption =
+    typeof deliveryOptionValue === 'string' && deliveryOptionValue.trim()
+      ? deliveryOptionValue.trim()
+      : 'Not specified (Customer skipped)'
+  const deliveryNotes =
+    typeof deliveryNotesValue === 'string' ? deliveryNotesValue.trim() : ''
+
   const totalPages = parsePositiveInteger(form.get('totalPages'))
-  let selectedPages: number[] | null = null
-  if (totalPages && typeof selectedPagesValue === 'string') {
-    try {
-      const parsed: unknown = JSON.parse(selectedPagesValue)
-      if (
-        Array.isArray(parsed) &&
-        parsed.every((page) => Number.isSafeInteger(page) && page > 0 && page <= totalPages)
-      ) {
-        selectedPages = [...new Set(parsed as number[])].sort((a, b) => a - b)
-      }
-    } catch {
-      selectedPages = null
-    }
-  }
   const copies = parsePositiveInteger(form.get('copies'))
   const submittedTotalCostPoisha = parsePositiveInteger(form.get('totalCostPoisha'))
+
   if (!totalPages || totalPages > MAX_PAGES) {
     return jsonError(`Total pages must be between 1 and ${MAX_PAGES}.`, 400)
-  }
-  if (!selectedPages?.length) {
-    return jsonError('Select at least one valid page to print.', 400)
   }
   if (!copies || copies > MAX_COPIES) {
     return jsonError(`Copies must be between 1 and ${MAX_COPIES}.`, 400)
@@ -410,31 +367,70 @@ export async function POST(request: Request) {
   if (!submittedTotalCostPoisha) {
     return jsonError('Total cost must be a positive amount in poisha.', 400)
   }
-  const price = calculatePrice(selectedPages.length, {
-    color: colorValue,
+
+  let originalFilename = 'document.pdf'
+  let originalPdfBuffer: Uint8Array | null = null
+
+  if (uploadMethod === 'DIRECT') {
+    if (!(fileValue instanceof File)) {
+      return jsonError('A PDF file is required for direct upload.', 400)
+    }
+    if (fileValue.size === 0 || fileValue.size > MAX_FILE_SIZE) {
+      return jsonError(
+        'The PDF must be between 1 byte and 50 MB (52,428,800 bytes). For larger files, please choose the WhatsApp or Telegram option.',
+        400,
+      )
+    }
+    if (
+      !fileValue.name.toLowerCase().endsWith('.pdf') &&
+      fileValue.type !== 'application/pdf'
+    ) {
+      return jsonError('Only PDF files are accepted for direct upload.', 400)
+    }
+    originalFilename =
+      fileValue.name.replace(/[\\/\r\n"]/g, '_').trim() || 'original.pdf'
+
+    try {
+      originalPdfBuffer = new Uint8Array(await fileValue.arrayBuffer())
+      const pdfDoc = await PDFDocument.load(originalPdfBuffer)
+      if (pdfDoc.getPageCount() !== totalPages) {
+        return jsonError('The submitted page count does not match the uploaded PDF.', 400)
+      }
+    } catch {
+      return jsonError('The uploaded file is not a valid PDF.', 400)
+    }
+  } else if (uploadMethod === 'WHATSAPP') {
+    originalFilename = 'Sent via WhatsApp (01518962340)'
+  } else {
+    originalFilename = 'Sent via Telegram (01518962340)'
+  }
+
+  let selectedPagesCount = totalPages
+  if (uploadMethod === 'DIRECT' && typeof selectedPagesValue === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(selectedPagesValue)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        selectedPagesCount = parsed.length
+      }
+    } catch {
+      selectedPagesCount = totalPages
+    }
+  }
+
+  const price = calculatePrice(selectedPagesCount, {
+    color: 'bw',
     paperSize: paperSizeValue,
-    side: 'single',
+    side: printSide === 'DUPLEX' ? 'duplex' : 'single',
     copies,
   })
   const totalCostPoisha = price.grandTotalPoisha
   if (submittedTotalCostPoisha !== totalCostPoisha) {
-    return jsonError('Submitted total cost does not match the page count, paper size, color mode, and copies.', 400)
+    return jsonError('Submitted total cost does not match the page count, paper size, and print side.', 400)
   }
 
-  let originalPdfBuffer: Uint8Array
-  try {
-    originalPdfBuffer = new Uint8Array(await fileValue.arrayBuffer())
-    const pdfDoc = await PDFDocument.load(originalPdfBuffer)
-    if (pdfDoc.getPageCount() !== totalPages) {
-      return jsonError('The submitted page count does not match the uploaded PDF.', 400)
-    }
-  } catch {
-    return jsonError('The uploaded file is not a valid PDF.', 400)
-  }
-
-  console.log('RPC Call Details:', { userId: user.id, totalCostPoisha })
+  // Deduct from wallet atomically
   let isSuccess: unknown
-  let rpcErr: { message: string } | null
+  let rpcErr: { message: string } | null = null
   try {
     const result = await supabaseAdmin.rpc('atomic_deduct_print_cost', {
       p_user_id: user.id,
@@ -444,61 +440,24 @@ export async function POST(request: Request) {
     rpcErr = result.error
   } catch (error) {
     rpcErr = error instanceof Error ? { message: error.message } : { message: String(error) }
-    console.log('RPC Failure:', rpcErr)
-    return NextResponse.json(
-      { error: rpcErr.message || 'Insufficient wallet balance or wallet not found.' },
-      { status: 400 },
-    )
   }
+
   if (rpcErr || !isSuccess) {
-    console.log('RPC Failure:', rpcErr)
     return NextResponse.json(
       { error: rpcErr?.message || 'Insufficient wallet balance or wallet not found.' },
       { status: 400 },
     )
   }
-  const deductionConfirmed =
-    isSuccess === true ||
-    (typeof isSuccess === 'object' &&
-      isSuccess !== null &&
-      (('success' in isSuccess && isSuccess.success === true) ||
-        ('deducted' in isSuccess && isSuccess.deducted === true)))
-  if (!deductionConfirmed) {
-    return jsonError('Insufficient wallet credit for this print job.', 402)
-  }
 
   const token = makeOrderToken()
   const tokenCode = token.replace(/^#/, '')
-  const colorLabel = colorValue === 'color' ? 'Full Color' : 'Black & White'
   const totalCostBdt = (totalCostPoisha / 100).toFixed(2)
-  const caption = makeTelegramCaption({
-    tokenCode,
-    customerName: finalCustomerName,
-    customerPhone: phoneValue.trim(),
-    deliveryOption: finalDeliveryOption,
-    selectedPageCount: selectedPages.length,
-    pageRange: finalPageRange,
-    colorMode: colorValue,
-    paperSize: paperSizeValue,
-    copies,
-    totalCostBdt,
-    deliveryNotes,
-  })
+  const finalPageRange =
+    typeof pageRangeValue === 'string' && pageRangeValue.trim()
+      ? pageRangeValue.trim()
+      : 'All'
 
   try {
-    const stampPdfBuffer = await createStampPdf({
-      tokenCode,
-      customerName: finalCustomerName,
-      customerPhone: phoneValue.trim(),
-      selectedPageCount: selectedPages.length,
-      pageRange: finalPageRange,
-      colorMode: colorValue,
-      paperSize: paperSizeValue,
-      copies,
-      deliveryOption: finalDeliveryOption,
-      totalCostBdt: totalCostPoisha / 100,
-    })
-
     const { data: job, error: insertError } = await supabaseAdmin
       .from('print_jobs')
       .insert({
@@ -506,12 +465,15 @@ export async function POST(request: Request) {
         user_id: user.id,
         customer_name: finalCustomerName,
         customer_phone: phoneValue.trim(),
-        delivery_option: finalDeliveryOption,
-        total_pages: selectedPages.length,
-        color_mode: colorLabel,
+        delivery_option: deliveryOption,
+        total_pages: selectedPagesCount,
+        color_mode: 'bw',
         paper_size: paperSizeValue,
+        print_side: printSide,
+        upload_method: uploadMethod,
         copies,
         total_cost_poisha: totalCostPoisha,
+        original_filename: originalFilename,
         telegram_file_id: null,
         file_storage_path: null,
         status: 'QUEUED',
@@ -531,20 +493,76 @@ export async function POST(request: Request) {
       })
     if (tokenInsertError) throw tokenInsertError
 
-    const telegramFileId = await submitMediaGroupToTelegram({
-      stampPdfBuffer,
-      originalPdfBuffer,
-      originalFilename,
-      tokenCode,
-      caption,
-      botToken: telegramBotToken,
-      chatId: telegramChatId,
-    })
-    const { error: updateError } = await supabaseAdmin
-      .from('print_jobs')
-      .update({ telegram_file_id: telegramFileId })
-      .eq('id', job.id)
-    if (updateError) throw updateError
+    // Handle Telegram dispatch
+    if (uploadMethod === 'DIRECT' && originalPdfBuffer && telegramBotToken && telegramChatId) {
+      try {
+        const stampPdfBuffer = await createStampPdf({
+          tokenCode,
+          customerName: finalCustomerName,
+          customerPhone: phoneValue.trim(),
+          selectedPageCount: selectedPagesCount,
+          pageRange: finalPageRange,
+          paperSize: paperSizeValue,
+          printSide: printSide === 'DUPLEX' ? 'Duplex' : 'Single',
+          uploadMethod,
+          copies,
+          deliveryOption,
+          totalCostBdt: totalCostPoisha / 100,
+        })
+
+        const caption = makeTelegramCaption({
+          tokenCode,
+          customerName: finalCustomerName,
+          customerPhone: phoneValue.trim(),
+          deliveryOption,
+          selectedPageCount: selectedPagesCount,
+          pageRange: finalPageRange,
+          paperSize: paperSizeValue,
+          printSide: printSide === 'DUPLEX' ? 'Duplex' : 'Single',
+          uploadMethod,
+          copies,
+          totalCostBdt,
+          deliveryNotes,
+        })
+
+        const telegramFileId = await submitMediaGroupToTelegram({
+          stampPdfBuffer,
+          originalPdfBuffer,
+          originalFilename,
+          tokenCode,
+          caption,
+          botToken: telegramBotToken,
+          chatId: telegramChatId,
+        })
+
+        await supabaseAdmin
+          .from('print_jobs')
+          .update({ telegram_file_id: telegramFileId })
+          .eq('id', job.id)
+      } catch (tgError) {
+        console.error('Telegram dispatch error for DIRECT upload:', tgError)
+      }
+    } else if (telegramBotToken && telegramChatId) {
+      // Notify Telegram channel of WhatsApp or Telegram submission
+      const alertText =
+        `🖨️ *New ${uploadMethod} Print Order*\n\n` +
+        `• *Order:* \`${token}\`\n` +
+        `• *Customer:* ${escapeMarkdown(finalCustomerName)} (${phoneValue.trim()})\n` +
+        `• *Specs:* ${selectedPagesCount} pgs · ${paperSizeValue} · ${printSide} · B&W · x${copies}\n` +
+        `• *Total:* Tk. ${totalCostBdt}\n` +
+        `• *Method:* ${uploadMethod} (Customer sends file directly)\n` +
+        `• *Delivery:* ${escapeMarkdown(deliveryOption)}`
+
+      await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: telegramChatId,
+          text: alertText,
+          parse_mode: 'Markdown',
+        }),
+      }).catch((tgErr) => console.error('Telegram text alert failed:', tgErr))
+    }
 
     return NextResponse.json({
       success: true,
@@ -552,40 +570,16 @@ export async function POST(request: Request) {
       job_id: job.id,
     })
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : typeof error === 'object' &&
-            error !== null &&
-            'message' in error &&
-            typeof error.message === 'string'
-          ? error.message
-          : String(error)
-    console.error(`Order creation or dispatch failed for ${token}:`, error)
-
+    console.error(`Order creation failed for ${token}:`, error)
+    // Refund wallet deduction on failure
     try {
-      const { data: refundResult, error: refundError } = await supabaseAdmin.rpc(
-        'atomic_wallet_topup',
-        {
-          p_user_id: user.id,
-          p_amount_poisha: totalCostPoisha,
-        },
-      )
-
-      const refundRejected =
-        refundResult === false ||
-        (typeof refundResult === 'object' &&
-          refundResult !== null &&
-          'success' in refundResult &&
-          refundResult.success === false)
-
-      if (refundError || refundRejected) {
-        console.error(`Wallet refund failed for ${token}:`, refundError ?? refundResult)
-      }
-    } catch (refundError) {
-      console.error(`Wallet refund request failed for ${token}:`, refundError)
+      await supabaseAdmin.rpc('atomic_wallet_topup', {
+        p_user_id: user.id,
+        p_amount_poisha: totalCostPoisha,
+      })
+    } catch {
+      // Ignore refund error on cleanup attempt
     }
-
-    return NextResponse.json({ error: message }, { status: 500 })
+    return jsonError('Could not finalize the order. Your wallet balance has been refunded.', 500)
   }
 }

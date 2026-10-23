@@ -1,20 +1,14 @@
-import { PRINT_RATES_POISHA, type PrintColor } from '@/lib/print'
+import { calculatePrintCostPoisha, type PaperSize } from '@/lib/print'
 
 export type ManualPaperSize = 'A4' | 'LEGAL'
-
-export const MANUAL_PRINT_RATES_POISHA: Record<
-  ManualPaperSize,
-  Record<PrintColor, number>
-> = {
-  A4: PRINT_RATES_POISHA.A4,
-  LEGAL: PRINT_RATES_POISHA.Legal,
-}
+export type ManualPrintSide = 'SINGLE' | 'DUPLEX'
 
 export function calculateManualOrderCostPoisha(
   paperSize: ManualPaperSize,
-  color: PrintColor,
+  side: ManualPrintSide,
   totalPages: number,
   copies: number,
 ) {
-  return MANUAL_PRINT_RATES_POISHA[paperSize][color] * totalPages * copies
+  const normalizedPaper: PaperSize = paperSize === 'LEGAL' ? 'Legal' : 'A4'
+  return calculatePrintCostPoisha(totalPages, normalizedPaper, side, copies)
 }

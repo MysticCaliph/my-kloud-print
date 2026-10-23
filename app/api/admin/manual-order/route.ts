@@ -1,6 +1,6 @@
 import { randomBytes, randomInt } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { calculateManualOrderCostPoisha } from '@/lib/manual-order'
+import { calculateManualOrderCostPoisha, type ManualPrintSide } from '@/lib/manual-order'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
     console.error('Manual print order operator lookup failed:', operatorError)
     return jsonError('Could not verify operator access.', 503)
   }
-  if (operator?.role !== 'operator') {
+  if (operator?.role !== 'operator' && operator?.role !== 'admin') {
     return jsonError('Operator access is required.', 403)
   }
 
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
   const input = body as Record<string, unknown>
   const userId = input.userId
   const paperSize = input.paperSize
-  const colorMode = input.colorMode
+  const printSide: ManualPrintSide = input.printSide === 'DUPLEX' ? 'DUPLEX' : 'SINGLE'
   const totalPages = input.totalPages
   const copies = input.copies
   const deliveryOption = input.deliveryOption
@@ -117,9 +117,6 @@ export async function POST(request: Request) {
   }
   if (paperSize !== 'A4' && paperSize !== 'LEGAL') {
     return jsonError('Paper size must be "A4" or "LEGAL".', 400)
-  }
-  if (colorMode !== 'bw' && colorMode !== 'color') {
-    return jsonError('Color mode must be "bw" or "color".', 400)
   }
   if (
     typeof totalPages !== 'number' ||
@@ -168,7 +165,7 @@ export async function POST(request: Request) {
 
   const totalCostPoisha = calculateManualOrderCostPoisha(
     paperSize,
-    colorMode,
+    printSide,
     totalPages,
     copies,
   )
@@ -197,36 +194,17 @@ export async function POST(request: Request) {
       console.error('Manual print order wallet balance lookup failed:', walletError)
       return jsonError('Could not verify the user wallet balance.', 503)
     }
-
-    const userBalanceInPoisha =
-      wallet?.balance_poisha == null ? 0 : Number(wallet.balance_poisha)
-    if (!Number.isSafeInteger(userBalanceInPoisha)) {
-      console.error(
-        'Manual print order wallet balance is not a safe integer:',
-        wallet?.balance_poisha,
-      )
-      return jsonError('Could not verify the user wallet balance.', 503)
-    }
-    if (userBalanceInPoisha < totalCostPoisha) {
-      return jsonError('Insufficient wallet balance.', 402)
+    const balance = wallet?.balance_poisha ?? 0
+    if (balance < totalCostPoisha) {
+      return jsonError('The customer does not have enough balance in their wallet.', 400)
     }
 
     try {
-      const p_user_id = userId
-      const p_amount_poisha = Math.round(totalCostPoisha)
-      if (!Number.isSafeInteger(p_amount_poisha)) {
-        return jsonError('The wallet deduction amount must be a whole number of poisha.', 400)
-      }
-      console.log('RPC Payload:', { p_user_id, p_amount_poisha })
-
       const { data, error } = await supabaseAdmin.rpc('atomic_deduct_print_cost', {
-        p_user_id,
-        p_amount_poisha,
+        p_user_id: userId,
+        p_amount_poisha: totalCostPoisha,
       })
-      console.log('Supabase RPC Response:', { data, error })
-      console.error('Supabase RPC Error Details:', error)
-
-      const errorMessage = error?.message || error?.details || 'Unknown error'
+      const errorMessage = error?.message || 'Could not deduct the cost from the customer wallet.'
       if (error) return jsonError(errorMessage, 500)
       if (!isConfirmedRpcSuccess(data)) {
         console.error('Wallet deduction RPC returned an unconfirmed result:', data)
@@ -269,12 +247,15 @@ export async function POST(request: Request) {
         original_filename: originalFilename?.trim() || 'Manual Admin Job (No PDF)',
         file_storage_path: null,
         paper_size: paperSize,
-        color_mode: colorMode,
+        print_side: printSide,
+        upload_method: 'DIRECT',
+        color_mode: 'bw',
         total_pages: totalPages,
         copies,
         total_cost_poisha: totalCostPoisha,
         status: 'queued',
         delivery_option: deliveryOption.trim(),
+        is_manual: true,
       })
       .select('id')
       .single()
@@ -288,27 +269,40 @@ export async function POST(request: Request) {
   } catch (insertError) {
     console.error('Print Jobs Insert Error:', insertError)
     insertErrorMessage =
-      insertError instanceof Error ? insertError.message : String(insertError)
+      insertError instanceof Error ? insertError.message : 'Could not create the print job.'
   }
 
-  if (insertErrorMessage || !jobId) {
+  if (!jobId) {
     if (deductFromWallet) {
       const refunded = await refundWalletDeduction(supabaseAdmin, userId, totalCostPoisha)
       if (!refunded) {
-        return jsonError(
-          'The print job could not be created and the wallet refund could not be confirmed. Contact an operator before retrying.',
-          500,
+        console.error(
+          `Manual print order creation failed after wallet deduction: user ${userId}, amount ${totalCostPoisha}`,
         )
       }
     }
-    return NextResponse.json(
-      { error: insertErrorMessage || 'The database did not return the created print job.' },
-      { status: 500 },
+    return jsonError(
+      insertErrorMessage || 'Could not save the manual print job.',
+      500,
     )
+  }
+
+  const tokenCode = token.replace(/^#/, '')
+  const { error: tokenInsertError } = await supabaseAdmin.from('print_tokens').insert({
+    token_code: tokenCode,
+    token: tokenCode,
+    print_job_id: jobId,
+  })
+  if (tokenInsertError) {
+    console.error('Manual print order token link error:', tokenInsertError)
   }
 
   return NextResponse.json({
     success: true,
-    job: { id: jobId, token, totalCostPoisha },
+    job: {
+      id: jobId,
+      token,
+      totalCostPoisha,
+    },
   })
 }

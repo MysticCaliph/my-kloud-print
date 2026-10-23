@@ -17,6 +17,9 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
 }
 
 export function PriceEstimator({ selectedPages, options, price }: PriceEstimatorProps) {
+  const isDuplex = options.side === 'duplex'
+  const isA4 = options.paperSize === 'A4'
+
   return (
     <section aria-labelledby="estimate-heading" className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
@@ -27,17 +30,37 @@ export function PriceEstimator({ selectedPages, options, price }: PriceEstimator
       </div>
 
       <div className="rounded-lg border border-dashed border-border bg-background/50 p-3 text-center font-mono text-xs text-muted-foreground tabular-nums">
-        <span className="text-foreground">{selectedPages}</span> pages ×{' '}
-        <span className="text-foreground">{formatBDT(price.rate)}</span> ×{' '}
-        <span className="text-foreground">{options.copies}</span>{' '}
-        {options.copies === 1 ? 'copy' : 'copies'}
+        {isDuplex ? (
+          <>
+            <span className="text-foreground">{selectedPages}</span> pages (
+            <span className="text-foreground">{price.sheets / options.copies}</span> sheets/copy) ×{' '}
+            <span className="text-foreground">{options.copies}</span>{' '}
+            {options.copies === 1 ? 'copy' : 'copies'}
+          </>
+        ) : (
+          <>
+            <span className="text-foreground">{selectedPages}</span> pages ×{' '}
+            <span className="text-foreground">{formatBDT(price.rate)}</span> ×{' '}
+            <span className="text-foreground">{options.copies}</span>{' '}
+            {options.copies === 1 ? 'copy' : 'copies'}
+          </>
+        )}
       </div>
 
       <dl className="flex flex-col gap-2.5" aria-live="polite">
         <Row label="Selected pages" value={`${selectedPages}`} muted />
         <Row
-          label={`Rate (${options.color === 'bw' ? 'B&W' : 'Color'})`}
-          value={`${formatBDT(price.rate)}/page`}
+          label="Print mode"
+          value="Black & White"
+          muted
+        />
+        <Row
+          label={`Rate (${options.paperSize} ${isDuplex ? 'Duplex' : 'Single'})`}
+          value={
+            isDuplex
+              ? `${formatBDT(isA4 ? 3.0 : 4.0)}/sheet`
+              : `${formatBDT(price.rate)}/page`
+          }
           muted
         />
         <Row label="Copies" value={`× ${options.copies}`} muted />
@@ -54,7 +77,7 @@ export function PriceEstimator({ selectedPages, options, price }: PriceEstimator
       </dl>
 
       <p className="text-xs text-muted-foreground">
-        {options.paperSize} · {options.side === 'duplex' ? 'Duplex' : 'Single-sided'} ·{' '}
+        {options.paperSize} · {isDuplex ? 'Duplex (double-sided)' : 'Single-sided'} ·{' '}
         {price.sheets} {price.sheets === 1 ? 'sheet' : 'sheets'} of paper
       </p>
     </section>
