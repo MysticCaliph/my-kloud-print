@@ -77,7 +77,7 @@ export async function GET(request: Request) {
   const { data: job, error: jobError } = await supabaseAdmin
     .from('print_jobs')
     .select(
-      'token, customer_name, customer_phone, delivery_option, total_pages, paper_size, color_mode, print_side, upload_method, copies, total_cost_poisha, created_at, original_filename',
+      'token, user_id, customer_name, customer_phone, delivery_option, total_pages, paper_size, color_mode, print_side, upload_method, copies, total_cost_poisha, created_at, original_filename',
     )
     .eq('id', id)
     .maybeSingle()
@@ -87,11 +87,30 @@ export async function GET(request: Request) {
   }
   if (!job) return jsonError('Print job not found.', 404)
 
+  let resolvedCustomerName =
+    typeof job.customer_name === 'string' && job.customer_name.trim()
+      ? job.customer_name.trim()
+      : ''
+
+  if (!resolvedCustomerName && job.user_id) {
+    const { data: customerProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('full_name')
+      .eq('id', job.user_id)
+      .maybeSingle()
+    if (customerProfile?.full_name?.trim()) {
+      resolvedCustomerName = customerProfile.full_name.trim()
+    }
+  }
+  if (!resolvedCustomerName) {
+    resolvedCustomerName = 'Guest / Walk-in'
+  }
+
   try {
     const logoBytes = await getProjectLogoBytes()
     const pdfBytes = await createOfficialReceiptPdfBytes({
       order_token: job.token,
-      customer_name: job.customer_name,
+      customer_name: resolvedCustomerName,
       customer_phone: job.customer_phone,
       upload_method: job.upload_method || 'DIRECT',
       paper_size: job.paper_size,

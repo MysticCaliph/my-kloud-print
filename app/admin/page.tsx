@@ -17,6 +17,7 @@ import {
   Printer,
   Search,
   Truck,
+  UserRound,
 } from 'lucide-react'
 import { Navbar } from '@/components/Navbar'
 import { ManualOrderModal } from '@/components/admin/manual-order-modal'
@@ -31,8 +32,11 @@ type PaperSize = 'A4' | 'Legal'
 interface PrintOrder {
   id: string
   token: string
+  customerName: string
   phone: string
   deliveryOption: string | null
+  deliveryAddress: string | null
+  deliveryNotes: string | null
   pages: number
   paperSize: PaperSize
   printSide: PrintSide
@@ -172,7 +176,7 @@ export default function AdminPage() {
   const fetchPrintJobs = useCallback(async () => {
     try {
       const supabase = createSupabaseBrowserClient()
-      const [ordersResult, revenueResult] = await Promise.all([
+      const [ordersResult, revenueResult, profilesResult] = await Promise.all([
         supabase
           .from('print_jobs')
           .select('*')
@@ -181,6 +185,9 @@ export default function AdminPage() {
           .from('print_jobs')
           .select('status, total_cost_poisha')
           .not('status', 'in', '("CANCELLED","cancelled","canceled","rejected")'),
+        supabase
+          .from('profiles')
+          .select('id, full_name'),
       ])
 
       if (ordersResult.error || revenueResult.error) {
@@ -198,20 +205,34 @@ export default function AdminPage() {
         return
       }
 
+      const profileNameMap = new Map<string, string>()
+      if (profilesResult.data) {
+        for (const p of profilesResult.data) {
+          if (p.id && typeof p.full_name === 'string' && p.full_name.trim()) {
+            profileNameMap.set(p.id, p.full_name.trim())
+          }
+        }
+      }
+
       setOrders(
         ordersResult.data.map((job) => {
+          const customerName =
+            (typeof job.customer_name === 'string' && job.customer_name.trim()) ||
+            (job.user_id ? profileNameMap.get(job.user_id) : undefined) ||
+            'Guest / Walk-in'
+
           return {
             id: job.id,
             token: job.token,
-            phone: job.customer_phone,
+            customerName,
+            phone: job.customer_phone ?? '',
             deliveryOption: job.delivery_option,
+            deliveryAddress: job.delivery_address ?? null,
+            deliveryNotes: job.delivery_notes ?? null,
             pages: job.total_pages,
             paperSize: job.paper_size === 'LEGAL' ? 'Legal' : job.paper_size,
             printSide: (job.print_side?.toUpperCase() === 'DUPLEX' ? 'DUPLEX' : 'SINGLE') as PrintSide,
             uploadMethod: (job.upload_method?.toUpperCase() || 'DIRECT') as UploadMethod,
-
-
-
             copies: job.copies,
             total: Number(job.total_cost_poisha) / 100,
             status: normalizeStatus(job.status),
@@ -264,6 +285,7 @@ export default function AdminPage() {
       const matchesQuery =
         !normalizedQuery ||
         order.token.toLowerCase().includes(normalizedQuery) ||
+        order.customerName.toLowerCase().includes(normalizedQuery) ||
         order.phone.toLowerCase().replace(/[\s-]/g, '').includes(normalizedQuery.replace(/[\s-]/g, ''))
       return matchesFilter && matchesQuery
     })
@@ -433,8 +455,8 @@ export default function AdminPage() {
                   type="search"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search order token or phone..."
-                  aria-label="Search order token or customer phone number"
+                  placeholder="Search token, customer name, or phone..."
+                  aria-label="Search token, customer name, or phone"
                   className="h-10 w-full rounded-lg border border-white/[0.09] bg-[#0b111b] pl-9 pr-3 text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-teal-300/50 focus:ring-2 focus:ring-teal-300/10"
                 />
               </div>
@@ -557,13 +579,27 @@ export default function AdminPage() {
                         <p className="mt-1.5 text-[11px] text-slate-600">{formatPlacedAt(order.placedAt)}</p>
                       </td>
                       <td className="max-w-[250px] px-5 py-4 align-middle">
-                        <div className="flex items-center gap-2 text-xs font-medium text-slate-200">
-                          <Phone className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
-                          {order.phone}
+                        <div className="flex items-center gap-2 text-xs font-semibold text-white">
+                          <UserRound className="size-3.5 shrink-0 text-teal-400" aria-hidden="true" />
+                          <span className="truncate">{order.customerName}</span>
                         </div>
-                        <p className="mt-2 text-xs leading-5 text-slate-500">
+                        <div className="mt-1.5 flex items-center gap-2 text-xs font-medium text-slate-200">
+                          <Phone className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
+                          {order.phone || 'N/A'}
+                        </div>
+                        <p className="mt-1.5 text-xs leading-5 text-slate-500">
                           Delivery: {order.deliveryOption || 'None'}
                         </p>
+                        {order.deliveryAddress && (
+                          <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
+                            {order.deliveryAddress}
+                          </p>
+                        )}
+                        {order.deliveryNotes && (
+                          <p className="mt-0.5 text-[11px] italic leading-4 text-slate-500">
+                            Note: {order.deliveryNotes}
+                          </p>
+                        )}
                       </td>
                       <td className="px-5 py-4 align-middle">
                         <div className="flex items-center gap-2 text-xs font-medium text-slate-200">
