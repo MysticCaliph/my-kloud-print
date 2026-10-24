@@ -109,6 +109,19 @@ export default function ResetPasswordPage() {
               <Loader2 className="mb-2 size-6 animate-spin text-teal-200" />
               Verifying recovery link…
             </div>
+          ) : !hasValidSession && !success ? (
+            <div className="flex flex-col items-center gap-4 py-4 text-center">
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-200">
+                This password recovery link is invalid or has expired. Please request a new password reset email from the sign-in dialog.
+              </div>
+              <Button
+                type="button"
+                onClick={() => router.push('/login')}
+                className="h-10 w-full bg-teal-300 font-semibold text-slate-950 hover:bg-teal-200"
+              >
+                Go to Sign In
+              </Button>
+            </div>
           ) : success ? (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
               <CheckCircle2 className="size-12 text-teal-200" />

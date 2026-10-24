@@ -77,7 +77,7 @@ export async function POST(request: Request) {
     console.error('Admin user deletion operator lookup failed:', operatorError)
     return jsonError('Could not verify operator access.', 503)
   }
-  if (operator?.role !== 'operator') {
+  if (operator?.role !== 'operator' && operator?.role !== 'admin') {
     return jsonError('Unauthorized: Operator access required.', 403)
   }
 

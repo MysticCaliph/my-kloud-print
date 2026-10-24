@@ -416,14 +416,48 @@ export async function POST(request: Request) {
   }
 
   let selectedPagesCount = totalPages
+  let selectedPageNumbers: number[] = []
   if (uploadMethod === 'DIRECT' && typeof selectedPagesValue === 'string') {
     try {
       const parsed: unknown = JSON.parse(selectedPagesValue)
       if (Array.isArray(parsed) && parsed.length > 0) {
-        selectedPagesCount = parsed.length
+        const validPages = Array.from(
+          new Set(
+            parsed
+              .map((p) => Number(p))
+              .filter((p) => Number.isInteger(p) && p >= 1 && p <= totalPages),
+          ),
+        ).sort((a, b) => a - b)
+        if (validPages.length > 0) {
+          selectedPageNumbers = validPages
+          selectedPagesCount = validPages.length
+        }
       }
     } catch {
       selectedPagesCount = totalPages
+    }
+  }
+
+  // If the customer selected a specific subset of pages, extract only those pages into the PDF sent to Telegram
+  if (
+    uploadMethod === 'DIRECT' &&
+    originalPdfBuffer &&
+    selectedPageNumbers.length > 0 &&
+    selectedPageNumbers.length < totalPages
+  ) {
+    try {
+      const srcDoc = await PDFDocument.load(originalPdfBuffer)
+      const trimmedDoc = await PDFDocument.create()
+      const copiedPages = await trimmedDoc.copyPages(
+        srcDoc,
+        selectedPageNumbers.map((pageNum) => pageNum - 1),
+      )
+      for (const page of copiedPages) {
+        trimmedDoc.addPage(page)
+      }
+      originalPdfBuffer = await trimmedDoc.save()
+    } catch (extractErr) {
+      console.error('Could not extract selected PDF pages, falling back to full PDF:', extractErr)
     }
   }
 

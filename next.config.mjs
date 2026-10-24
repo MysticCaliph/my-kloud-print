@@ -4,7 +4,7 @@ const nextConfig = {
     agentUpgrade: 'security',
   },
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   images: {
     unoptimized: true,

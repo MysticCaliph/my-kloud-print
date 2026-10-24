@@ -6,7 +6,7 @@ function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
 }
 
-export async function GET(request: Request) {
+export async function GET() {
   let supabase
   try {
     supabase = await createSupabaseServerClient()
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
     console.error('Admin user search operator lookup failed:', operatorError)
     return jsonError('Could not verify operator access.', 503)
   }
-  if (operator?.role !== 'operator') {
+  if (operator?.role !== 'operator' && operator?.role !== 'admin') {
     return jsonError('Unauthorized: Operator access required', 403)
   }
 

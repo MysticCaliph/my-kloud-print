@@ -58,7 +58,9 @@ function OrderStatus({ status }: { status: AccountPrintOrder['status'] }) {
       ? 'border-amber-400/25 bg-amber-400/10 text-amber-300'
       : status === 'PRINTED'
         ? 'border-sky-400/25 bg-sky-400/10 text-sky-300'
-        : 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300'
+        : status === 'CANCELLED'
+          ? 'border-rose-400/25 bg-rose-400/10 text-rose-300'
+          : 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300'
 
   return (
     <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold tracking-wider ${style}`}>
@@ -68,11 +70,15 @@ function OrderStatus({ status }: { status: AccountPrintOrder['status'] }) {
 }
 
 function TransactionStatus({ status }: { status: WalletTransaction['status'] }) {
-  const completed = status === 'COMPLETED'
+  const completed = status === 'COMPLETED' || status === 'REFUNDED'
   return (
     <span
       className={`inline-flex items-center gap-1.5 text-xs font-medium ${
-        completed ? 'text-emerald-400' : 'text-rose-400'
+        status === 'REFUNDED'
+          ? 'text-amber-300'
+          : completed
+            ? 'text-emerald-400'
+            : 'text-rose-400'
       }`}
     >
       {completed ? (
@@ -169,35 +175,74 @@ export default function AccountPage() {
             total: job.total_cost_poisha / 100,
             fileStoragePath: job.file_storage_path,
             status:
-              job.status === 'PRINTED' || job.status === 'DELIVERED'
-                ? job.status
-                : 'QUEUED',
+              job.status?.toUpperCase() === 'PRINTED'
+                ? 'PRINTED'
+                : job.status?.toUpperCase() === 'DELIVERED'
+                  ? 'DELIVERED'
+                  : job.status?.toUpperCase() === 'CANCELLED'
+                    ? 'CANCELLED'
+                    : 'QUEUED',
           })),
         )
       }
+
+      const derivedLedger: WalletTransaction[] = []
+      if (data) {
+        for (const job of data) {
+          const isCancelled = job.status?.toUpperCase() === 'CANCELLED'
+          derivedLedger.push({
+            id: `job-${job.token}`,
+            date: job.created_at,
+            type: 'PRINT_JOB',
+            description: `Print Order ${job.token} (${job.total_pages}p × ${job.copies})`,
+            amount: Number(job.total_cost_poisha) / 100,
+            trxId: job.token,
+            status: isCancelled ? 'REFUNDED' : 'COMPLETED',
+          })
+        }
+      }
+
       if (notificationLoadError) {
         setNotificationError(notificationLoadError.message)
         setNotifications([])
       } else {
         setNotificationError(null)
-        setNotifications(
-          (notificationData ?? []).map((notification) => {
-            const row = notification as typeof notification & {
-              type?: string
-              notification_type?: string
+        const mappedNotifications = (notificationData ?? []).map((notification) => {
+          const row = notification as typeof notification & {
+            type?: string
+            notification_type?: string
+          }
+          const title = row.title ?? 'Notification'
+          const message = row.message ?? ''
+          const match = message.match(/৳\s*([0-9]+(?:\.[0-9]+)?)/)
+          if (title.toLowerCase().includes('credit') || title.toLowerCase().includes('top')) {
+            const parsedAmt = match ? Number(match[1]) : 0
+            if (parsedAmt > 0) {
+              derivedLedger.push({
+                id: `topup-${row.id}`,
+                date: row.created_at,
+                type: 'TOP_UP',
+                description: title,
+                amount: parsedAmt,
+                trxId: null,
+                status: 'COMPLETED',
+              })
             }
-            return {
-              id: row.id,
-              type: row.type ?? row.notification_type ?? '',
-              title: row.title ?? 'Notification',
-              message: row.message ?? '',
-              created_at: row.created_at,
-              is_read: Boolean(row.is_read),
-            }
-          }),
-        )
+          }
+          return {
+            id: row.id,
+            type: row.type ?? row.notification_type ?? '',
+            title,
+            message,
+            created_at: row.created_at,
+            is_read: Boolean(row.is_read),
+          }
+        })
+        setNotifications(mappedNotifications)
       }
-      setLedger([])
+
+      derivedLedger.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      setLedger(derivedLedger)
     }
     void refreshActivity()
     return () => {

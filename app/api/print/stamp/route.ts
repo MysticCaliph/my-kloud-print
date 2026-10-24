@@ -61,31 +61,34 @@ export async function GET(request: Request) {
     return jsonError('Print stamp service is not configured on the server.', 503)
   }
 
-  const { data: profile, error: profileError } = await supabaseAdmin
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-  if (profileError) {
-    console.error('Print stamp operator role lookup failed:', profileError)
-    return jsonError('Could not verify operator access.', 503)
-  }
-  if (profile?.role !== 'operator' && profile?.role !== 'admin') {
-    return jsonError('Operator access is required.', 403)
-  }
+  const [{ data: profile, error: profileError }, { data: job, error: jobError }] =
+    await Promise.all([
+      supabaseAdmin.from('profiles').select('role').eq('id', user.id).maybeSingle(),
+      supabaseAdmin
+        .from('print_jobs')
+        .select(
+          'token, user_id, customer_name, customer_phone, delivery_option, delivery_address, delivery_notes, total_pages, paper_size, color_mode, print_side, upload_method, copies, total_cost_poisha, created_at, original_filename',
+        )
+        .eq('id', id)
+        .maybeSingle(),
+    ])
 
-  const { data: job, error: jobError } = await supabaseAdmin
-    .from('print_jobs')
-    .select(
-      'token, user_id, customer_name, customer_phone, delivery_option, delivery_address, delivery_notes, total_pages, paper_size, color_mode, print_side, upload_method, copies, total_cost_poisha, created_at, original_filename',
-    )
-    .eq('id', id)
-    .maybeSingle()
+  if (profileError) {
+    console.error('Print stamp role lookup failed:', profileError)
+    return jsonError('Could not verify access permissions.', 503)
+  }
   if (jobError) {
     console.error('Print stamp job lookup failed:', jobError)
     return jsonError('Could not load the print job.', 500)
   }
   if (!job) return jsonError('Print job not found.', 404)
+
+  const isOperatorOrAdmin = profile?.role === 'operator' || profile?.role === 'admin'
+  const isJobOwner = Boolean(job.user_id && job.user_id === user.id)
+
+  if (!isOperatorOrAdmin && !isJobOwner) {
+    return jsonError('You do not have permission to view this receipt.', 403)
+  }
 
   let resolvedCustomerName =
     typeof job.customer_name === 'string' && job.customer_name.trim()

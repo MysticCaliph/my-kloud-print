@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     console.error('Admin wallet top-up operator lookup failed:', profileError)
     return jsonError('Could not verify operator access.', 503)
   }
-  if (profile?.role !== 'operator') {
+  if (profile?.role !== 'operator' && profile?.role !== 'admin') {
     return jsonError('Unauthorized: Operator access required', 403)
   }
 
@@ -96,8 +96,20 @@ export async function POST(request: Request) {
     return jsonError('Wallet top-up was not completed.', 500)
   }
 
+  const formattedCredit = (amountPoisha / 100).toFixed(2)
+  try {
+    await supabaseAdmin.from('notifications').insert({
+      user_id: targetUserId,
+      title: 'Wallet Credited',
+      message: `৳${formattedCredit} has been added to your PrintKloud wallet balance.`,
+      is_read: false,
+    })
+  } catch {
+    // Non-blocking notification insert
+  }
+
   return NextResponse.json({
     success: true,
-    message: `Successfully added ৳${(amountPoisha / 100).toFixed(2)} credit`,
+    message: `Successfully added ৳${formattedCredit} credit`,
   })
 }
